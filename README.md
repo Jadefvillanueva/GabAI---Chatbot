@@ -74,7 +74,7 @@ To run this project locally, follow these steps:
 1.  **Clone the repository:**
 
     ```sh
-    git clone [https://github.com/YOUR_USERNAME/gabai-student-helper.git](https://github.com/YOUR_USERNAME/gabai-student-helper.git)
+    git clone https://github.com/jadedevillanueva/gabai-student-helper.git
     cd gabai-student-helper
     ```
 
