@@ -74,19 +74,19 @@ To run this project locally, follow these steps:
 1.  **Clone the repository:**
 
     ```sh
-    git clone https://github.com/jadedevillanueva/gabai-student-helper.git
-    cd gabai-student-helper
+    git clone https://github.com/Jadefvillanueva/GabAI---Chatbot.git
+    cd GabAI---Chatbot
     ```
 
 2.  **Create a `.env` file:**
     In the root of the project, create a file named `.env`. The `botpress_service.dart` file expects two keys:
 
     ```.env
-    # Your Botpress v1 API endpoint
-    BOTPRESS_BASE_URL=[https://your-botpress-instance.com/api/v1](https://your-botpress-instance.com/api/v1)
+    # Your Botpress Chat API Webhook ID
+    BOTPRESS_BASE_URL=https://chat.botpress.cloud/YOUR_WEBHOOK_ID
 
-    # Your Botpress WebSocket URL
-    BOTPRESS_WEBSOCKET_URL=wss://[your-botpress-instance.com/socket.io/](https://your-botpress-instance.com/socket.io/)
+    # Your Botpress WebSocket URL (same as above, but wss://)
+    BOTPRESS_WEBSOCKET_URL=wss://chat.botpress.cloud/YOUR_WEBHOOK_ID
     ```
 
 3.  **Install dependencies:**
