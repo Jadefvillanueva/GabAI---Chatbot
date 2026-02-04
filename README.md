@@ -3,6 +3,7 @@
 ![Built with Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569B?logo=flutter)
 ![Powered by Botpress](https://img.shields.io/badge/Powered%20by-Botpress-1F2937?logo=botpress)
 ![AI by OpenAI](https://img.shields.io/badge/AI-OpenAI-412991?logo=openai)
+![Automation by n8n](https://img.shields.io/badge/Automation-n8n-FF6B6B?logo=n8n)
 
 BUddy is a mobile-first, AI-powered chatbot designed to serve as a Smart Student Affairs Assistant for **Bicol University Polangui (BUP)**.
 
@@ -28,6 +29,9 @@ By automating routine inquiries, the system enhances service accessibility for s
 - **Bot Typing Indicator:** Shows a "BUddy is typing..." animation (`flutter_spinkit`) when the bot is processing a response.
 - **RAG-Powered Responses:** Uses a **Retrieval-Augmented Generation (RAG)** pipeline to provide answers grounded in an official Knowledge Base (university policies, handbooks, PDFs).
 - **Natural Language Understanding:** Leverages an **OpenAI LLM** for advanced intent classification and natural language understanding.
+- **Automated Incident Reporting:** n8n workflows capture and process student incident reports automatically.
+- **Contact Routing & Escalation:** Intelligent automation routes complex requests to appropriate OSAS staff for further assistance.
+- **Live News Scraping:** Automated scraping of the latest Bicol University news and announcements to keep students informed.
 
 ## 📱 Screenshots
 
@@ -47,6 +51,8 @@ This project uses a mobile-first architecture that separates the client applicat
   - Provides the core Natural Language Understanding and response generation capabilities.
 - **Knowledge Base:** **Vector Index**
   - A database of university policies, PDFs, and documents used by the RAG pipeline to ensure answers are accurate and based on official sources.
+- **Automation Engine:** **n8n**
+  - Orchestrates backend workflows for incident report processing, contact routing to OSAS staff, and automated news scraping from BU sources.
 - **Design Prototyping:** **Figma**
 
 ### System Architecture Flow
@@ -58,7 +64,12 @@ Based on the project's design:
 3.  Botpress identifies the user's intent.
     - **3a. Simple Intent:** If it's a simple, rule-based query, Botpress replies directly.
     - **3b. Complex Query (RAG):** For open-ended questions, Botpress queries the **Knowledge Base (KB)** for relevant documents and calls the **LLM Service (OpenAI)** to generate a natural, context-aware answer.
-4.  The final answer is returned to the user in the app.
+    - **3c. Action Required:** For incident reports or escalations, Botpress triggers **n8n workflows**.
+4.  **n8n Automation Engine** handles backend processes:
+    - **Incident Reporting:** Captures, validates, and routes incident reports to appropriate OSAS departments.
+    - **Contact & Escalation:** Identifies complex requests and notifies OSAS staff for direct student follow-up.
+    - **News Aggregation:** Scrapes the latest BU announcements and updates.
+5.  The final answer is returned to the user in the app.
 
 ## 🚀 Getting Started
 
