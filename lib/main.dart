@@ -22,18 +22,18 @@ void main() async {
   // Load the .env file before running the app
   await dotenv.load(fileName: ".env");
 
-  runApp(const GabAiApp());
+  runApp(const BUddyApp());
 }
 
 // The root widget of the application.
-class GabAiApp extends StatelessWidget {
-  const GabAiApp({super.key});
+class BUddyApp extends StatelessWidget {
+  const BUddyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'GabAI',
+      title: 'BUddy',
       theme: ThemeData(
         primaryColor: DESIGN_ACCENT,
         scaffoldBackgroundColor: DESIGN_BACKGROUND,

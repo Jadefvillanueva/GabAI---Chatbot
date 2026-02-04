@@ -1,10 +1,10 @@
-# GabAI: Smart Student Affairs Assistant
+# BUddy: Smart Student Affairs Assistant
 
 ![Built with Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569B?logo=flutter)
 ![Powered by Botpress](https://img.shields.io/badge/Powered%20by-Botpress-1F2937?logo=botpress)
 ![AI by OpenAI](https://img.shields.io/badge/AI-OpenAI-412991?logo=openai)
 
-GabAI is a mobile-first, AI-powered chatbot designed to serve as a Smart Student Affairs Assistant for **Bicol University Polangui (BUP)**.
+BUddy is a mobile-first, AI-powered chatbot designed to serve as a Smart Student Affairs Assistant for **Bicol University Polangui (BUP)**.
 
 This project, developed using Flutter and Botpress, aims to solve common communication challenges by providing students with 24/7, instant access to information about university services, policies, and procedures.
 
@@ -16,7 +16,7 @@ The reliance on in-person communication and limited office hours, combined with 
 
 ## 💡 The Solution
 
-**GabAI** provides a 24/7 online platform that instantly answers student questions, eliminating the need for many in-person visits.
+**BUddy** provides a 24/7 online platform that instantly answers student questions, eliminating the need for many in-person visits.
 
 By automating routine inquiries, the system enhances service accessibility for students and allows OSAS staff to focus on more complex administrative and developmental duties. This project aligns with Bicol University’s Thematic Area 2 (Industry, Energy, and Emerging Technology) and supports Sustainable Development Goal 4 (Quality Education).
 
@@ -25,7 +25,7 @@ By automating routine inquiries, the system enhances service accessibility for s
 - **Animated Splash Screen:** A smooth, welcoming animation on app launch.
 - **Modern Chat UI:** A clean, intuitive, and readable chat interface.
 - **Real-time Communication:** Uses WebSockets for instant message delivery and receiving.
-- **Bot Typing Indicator:** Shows a "GabAI is typing..." animation (`flutter_spinkit`) when the bot is processing a response.
+- **Bot Typing Indicator:** Shows a "BUddy is typing..." animation (`flutter_spinkit`) when the bot is processing a response.
 - **RAG-Powered Responses:** Uses a **Retrieval-Augmented Generation (RAG)** pipeline to provide answers grounded in an official Knowledge Base (university policies, handbooks, PDFs).
 - **Natural Language Understanding:** Leverages an **OpenAI LLM** for advanced intent classification and natural language understanding.
 
@@ -74,8 +74,8 @@ To run this project locally, follow these steps:
 1.  **Clone the repository:**
 
     ```sh
-    git clone https://github.com/Jadefvillanueva/GabAI---Chatbot.git
-    cd GabAI---Chatbot
+    git clone https://github.com/Jadefvillanueva/BUddy---Chatbot.git
+    cd BUddy---Chatbot
     ```
 
 2.  **Create a `.env` file:**

@@ -83,7 +83,7 @@ class _SplashScreenState extends State<SplashScreen>
               const SizedBox(height: 20),
               // App title.
               Text(
-                'GabAI Student Helper',
+                'BUddy Student Helper',
                 style: GoogleFonts.inter(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,

@@ -197,7 +197,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Ask GabAI anything',
+                        'Ask BUddy anything',
                         style: GoogleFonts.inter(
                           fontSize: 22,
                           fontWeight: FontWeight.w600,
@@ -245,7 +245,7 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              'Suggestions on what to ask GabAI',
+              'Suggestions on what to ask BUddy',
               style: GoogleFonts.inter(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -304,9 +304,9 @@ class _ChatScreenState extends State<ChatScreen> {
             ? CrossAxisAlignment.end
             : CrossAxisAlignment.start,
         children: [
-          // "ME" or "GabAI" label.
+          // "ME" or "BUddy" label.
           Text(
-            message.isUser ? 'ME' : 'GabAI',
+            message.isUser ? 'ME' : 'BUddy',
             style: GoogleFonts.inter(
               fontSize: 12,
               color: DESIGN_SECONDARY_TEXT,
@@ -350,7 +350,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // Builds the "GabAI is typing" animation.
+  // Builds the "BUddy is typing" animation.
   Widget _buildTypingIndicator() {
     return Container(
       alignment: Alignment.centerLeft,
@@ -358,9 +358,9 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // "GabAI" label.
+          // "BUddy" label.
           Text(
-            'GabAI',
+            'BUddy',
             style: GoogleFonts.inter(
               fontSize: 12,
               color: DESIGN_SECONDARY_TEXT,
