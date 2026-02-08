@@ -26,10 +26,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // --- Stream Subscriptions (replaces Timer) ---
   StreamSubscription? _messageSubscription;
-  StreamSubscription? _typingSubscription;
 
   bool _initializing = true; // True while the bot connection is being set up.
   bool _isBotTyping = false; // True if the bot is "typing".
+  Timer? _typingTimeout;
 
   @override
   void initState() {
@@ -41,9 +41,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     // --- Cancel subscriptions and dispose the service ---
     _messageSubscription?.cancel();
-    _typingSubscription?.cancel();
     _botService.dispose(); // This closes the WebSocket connection.
-
+    _typingTimeout?.cancel();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -72,7 +71,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _messageSubscription = _botService.messageStream.listen(
         _onBotMessageReceived,
       );
-      _typingSubscription = _botService.typingStream.listen(_onBotTyping);
     } catch (e) {
       if (mounted) _showError('Init error: $e');
     } finally {
@@ -80,18 +78,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Handles bot typing status updates.
-  void _onBotTyping(bool isTyping) {
-    if (mounted) {
-      setState(() {
-        _isBotTyping = isTyping;
-      });
-      if (isTyping) _scrollToBottom(); // Scroll down to show indicator
-    }
-  }
-
   // Handles new messages received from the bot.
   void _onBotMessageReceived(ChatMessage message) {
+    if (message.isUser) return;
+
     // Skip duplicate messages.
     if (_seenMessageIds.contains(message.id)) return;
 
@@ -126,28 +116,42 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
 
-    // Add the user's message to the UI immediately.
     final userMessage = ChatMessage(
       text: text,
       isUser: true,
       id: 'local-${DateTime.now().millisecondsSinceEpoch}',
     );
-    setState(() {
-      _messages.add(userMessage);
-    });
-    _scrollToBottom();
-    _textController.clear();
-
-    // Send the message to the API.
-    try {
-      final ok = await _botService.sendTextMessage(text);
-      if (!ok) {
-        _showError('Failed to send message');
-      }
-      // The bot's reply will arrive via the stream listener.
-    } catch (e) {
-      _showError('Send error: $e');
+    if (mounted) {
+      setState(() {
+        _messages.add(userMessage);
+        _isBotTyping = true;
+      });
     }
+    _scrollToBottom();
+
+    // // Send the message to the API.
+    // try {
+    //   final ok = await _botService.sendTextMessage(text);
+    //   if (!ok) {
+    //     _showError('Failed to send message');
+    //   }
+    //   // The bot's reply will arrive via the stream listener.
+    // } catch (e) {
+    //   _showError('Send error: $e');
+    // }
+
+    _textController.clear();
+    _typingTimeout?.cancel();
+    _typingTimeout = Timer(const Duration(seconds: 15), () {
+      if (mounted) {
+        setState(() {
+          _isBotTyping = false;
+        });
+      }
+    });
+    await _botService.sendTextMessage(
+      text,
+    ); // Just send it. The stream will update the UI.
   }
 
   @override
@@ -215,16 +219,18 @@ class _ChatScreenState extends State<ChatScreen> {
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 8.0,
                                 ),
-                                itemCount: _messages.length,
+                                itemCount: _messages.length +
+                                    (_isBotTyping ? 1 : 0),
                                 itemBuilder: (context, index) {
+                                  if (_isBotTyping &&
+                                      index == _messages.length) {
+                                    return _buildTypingIndicator();
+                                  }
                                   final message = _messages[index];
                                   return _buildMessageBubble(message);
                                 },
                               ),
                       ),
-
-                      // --- Typing Indicator ---
-                      if (_isBotTyping) _buildTypingIndicator(),
 
                       // --- Text Input Field ---
                       _buildTextInputBar(),
