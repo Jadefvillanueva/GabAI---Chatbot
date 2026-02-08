@@ -4,7 +4,7 @@ import 'package:flutter/material.dart'; // Flutter's core UI library.
 import 'package:google_fonts/google_fonts.dart'; // For using custom fonts.
 import 'package:flutter_spinkit/flutter_spinkit.dart'; // For the typing indicator animation.
 
-import 'main.dart'; // For theme colors
+import 'theme_provider.dart'; // For theme colors
 import 'chat_message.dart'; // For the message model
 import 'botpress_service.dart'; // For the API service
 
@@ -156,8 +156,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeScope.of(context);
+    final c = theme.colors;
+
     return Scaffold(
-      backgroundColor: DESIGN_BACKGROUND,
+      backgroundColor: c.background,
       // Use a Stack to layer the background gradient.
       body: Stack(
         children: [
@@ -173,9 +176,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   decoration: BoxDecoration(
                     gradient: RadialGradient(
                       colors: [
-                        GRADIENT_START.withOpacity(0.6),
-                        GRADIENT_MID.withOpacity(0.6),
-                        GRADIENT_END.withOpacity(0.6),
+                        c.gradientStart.withOpacity(0.6),
+                        c.gradientMid.withOpacity(0.6),
+                        c.gradientEnd.withOpacity(0.6),
                       ],
                       radius: 0.8,
                     ),
@@ -187,26 +190,51 @@ class _ChatScreenState extends State<ChatScreen> {
           // Main chat UI.
           SafeArea(
             child: _initializing
-                ? const Center(
-                    child: CircularProgressIndicator(color: DESIGN_ACCENT),
-                  )
+                ? Center(child: CircularProgressIndicator(color: c.accent))
                 : Column(
                     children: [
-                      // --- Header: Logo and Title ---
+                      // --- Header: Logo, Title, and Theme Toggle ---
                       const SizedBox(height: 16),
-                      const Icon(
-                        Icons.auto_awesome,
-                        color: DESIGN_ACCENT,
-                        size: 40,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Ask BUddy anything',
-                        style: GoogleFonts.inter(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w600,
-                          color: DESIGN_PRIMARY_TEXT,
-                        ),
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Centered logo + title
+                          Column(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                color: c.accent,
+                                size: 40,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Ask BUddy anything',
+                                style: GoogleFonts.inter(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                  color: c.primaryText,
+                                ),
+                              ),
+                            ],
+                          ),
+                          // Theme toggle button (top-right)
+                          Positioned(
+                            right: 12,
+                            top: 0,
+                            child: IconButton(
+                              icon: Icon(
+                                theme.isDarkMode
+                                    ? Icons.light_mode_rounded
+                                    : Icons.dark_mode_rounded,
+                                color: c.accent,
+                              ),
+                              tooltip: theme.isDarkMode
+                                  ? 'Switch to Light Mode'
+                                  : 'Switch to Dark Mode',
+                              onPressed: () => theme.toggleTheme(),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 24),
 
@@ -219,8 +247,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 8.0,
                                 ),
-                                itemCount: _messages.length +
-                                    (_isBotTyping ? 1 : 0),
+                                itemCount:
+                                    _messages.length + (_isBotTyping ? 1 : 0),
                                 itemBuilder: (context, index) {
                                   if (_isBotTyping &&
                                       index == _messages.length) {
@@ -244,6 +272,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Builds the widget shown when the chat list is empty.
   Widget _buildEmptyState() {
+    final c = ThemeScope.of(context).colors;
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
@@ -255,7 +284,7 @@ class _ChatScreenState extends State<ChatScreen> {
               style: GoogleFonts.inter(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
-                color: DESIGN_SECONDARY_TEXT,
+                color: c.secondaryText,
               ),
             ),
             const SizedBox(height: 16),
@@ -278,6 +307,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Builds a single clickable suggestion chip.
   Widget _buildSuggestionChip(String text) {
+    final c = ThemeScope.of(context).colors;
     return GestureDetector(
       onTap: () {
         _textController.text = text;
@@ -286,13 +316,13 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: DESIGN_USER_BUBBLE.withOpacity(0.7),
+          color: c.userBubble.withOpacity(0.7),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
           text,
           style: GoogleFonts.inter(
-            color: DESIGN_PRIMARY_TEXT,
+            color: c.primaryText,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -302,6 +332,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Builds a single chat bubble for a message.
   Widget _buildMessageBubble(ChatMessage message) {
+    final c = ThemeScope.of(context).colors;
     return Container(
       alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -315,7 +346,7 @@ class _ChatScreenState extends State<ChatScreen> {
             message.isUser ? 'ME' : 'BUddy',
             style: GoogleFonts.inter(
               fontSize: 12,
-              color: DESIGN_SECONDARY_TEXT,
+              color: c.secondaryText,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -328,11 +359,9 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
               decoration: BoxDecoration(
-                color: message.isUser ? DESIGN_USER_BUBBLE : DESIGN_AI_BUBBLE,
+                color: message.isUser ? c.userBubble : c.aiBubble,
                 borderRadius: BorderRadius.circular(16),
-                border: message.isUser
-                    ? null
-                    : Border.all(color: DESIGN_AI_BORDER),
+                border: message.isUser ? null : Border.all(color: c.aiBorder),
                 boxShadow: const [
                   BoxShadow(
                     offset: Offset(0, 2),
@@ -344,7 +373,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Text(
                 message.text,
                 style: GoogleFonts.inter(
-                  color: DESIGN_PRIMARY_TEXT,
+                  color: c.primaryText,
                   fontSize: 16,
                   height: 1.4, // Line height for readability.
                 ),
@@ -358,6 +387,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Builds the "BUddy is typing" animation.
   Widget _buildTypingIndicator() {
+    final c = ThemeScope.of(context).colors;
     return Container(
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -369,7 +399,7 @@ class _ChatScreenState extends State<ChatScreen> {
             'BUddy',
             style: GoogleFonts.inter(
               fontSize: 12,
-              color: DESIGN_SECONDARY_TEXT,
+              color: c.secondaryText,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -382,9 +412,9 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
               decoration: BoxDecoration(
-                color: DESIGN_AI_BUBBLE,
+                color: c.aiBubble,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: DESIGN_AI_BORDER),
+                border: Border.all(color: c.aiBorder),
                 boxShadow: const [
                   BoxShadow(
                     offset: Offset(0, 2),
@@ -394,7 +424,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
               // The 3-dot bounce animation.
-              child: const SpinKitThreeBounce(color: DESIGN_ACCENT, size: 20.0),
+              child: SpinKitThreeBounce(color: c.accent, size: 20.0),
             ),
           ),
         ],
@@ -404,15 +434,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // Builds the text input field and send button at the bottom.
   Widget _buildTextInputBar() {
+    final c = ThemeScope.of(context).colors;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
       color: Colors.transparent,
       child: Container(
-        // The white, rounded input bar.
+        // The rounded input bar.
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: c.inputBarBackground,
           borderRadius: BorderRadius.circular(30.0),
-          border: Border.all(color: DESIGN_AI_BORDER),
+          border: Border.all(color: c.aiBorder),
           boxShadow: const [
             BoxShadow(
               offset: Offset(0, 4),
@@ -427,13 +458,10 @@ class _ChatScreenState extends State<ChatScreen> {
             Expanded(
               child: TextField(
                 controller: _textController,
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  color: DESIGN_PRIMARY_TEXT,
-                ),
+                style: GoogleFonts.inter(fontSize: 16, color: c.primaryText),
                 decoration: InputDecoration(
                   hintText: 'Ask me anything about student affairs',
-                  hintStyle: GoogleFonts.inter(color: DESIGN_SECONDARY_TEXT),
+                  hintStyle: GoogleFonts.inter(color: c.secondaryText),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.only(left: 20, right: 12),
                 ),
@@ -442,7 +470,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             // Send button.
             IconButton(
-              icon: const Icon(Icons.near_me_outlined, color: DESIGN_ACCENT),
+              icon: Icon(Icons.near_me_outlined, color: c.accent),
               onPressed: _handleSendPressed,
             ),
             const SizedBox(width: 4),

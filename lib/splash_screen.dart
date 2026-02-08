@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'chat_screen.dart'; // Import the chat screen
-import 'main.dart'; // Import for theme colors
+import 'theme_provider.dart'; // Import for theme colors
 
 // The splash screen shown on app launch.
 class SplashScreen extends StatefulWidget {
@@ -69,8 +69,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
     return Scaffold(
-      backgroundColor: DESIGN_BACKGROUND,
+      backgroundColor: c.background,
       body: Center(
         // Apply the scale animation to the logo and title.
         child: ScaleTransition(
@@ -79,7 +80,7 @@ class _SplashScreenState extends State<SplashScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               // Logo icon.
-              const Icon(Icons.auto_awesome, color: DESIGN_ACCENT, size: 80),
+              Icon(Icons.auto_awesome, color: c.accent, size: 80),
               const SizedBox(height: 20),
               // App title.
               Text(
@@ -87,7 +88,7 @@ class _SplashScreenState extends State<SplashScreen>
                 style: GoogleFonts.inter(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: DESIGN_PRIMARY_TEXT,
+                  color: c.primaryText,
                 ),
               ),
             ],
