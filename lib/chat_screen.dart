@@ -1,14 +1,16 @@
-import 'dart:async'; // For asynchronous operations like StreamSubscription.
-import 'dart:ui'; // Required for ImageFilter.blur.
-import 'package:flutter/material.dart'; // Flutter's core UI library.
-import 'package:google_fonts/google_fonts.dart'; // For using custom fonts.
-import 'package:flutter_spinkit/flutter_spinkit.dart'; // For the typing indicator animation.
+import 'dart:async';
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_spinkit/flutter_spinkit.dart';
 
-import 'theme_provider.dart'; // For theme colors
-import 'chat_message.dart'; // For the message model
-import 'botpress_service.dart'; // For the API service
+import 'theme_provider.dart';
+import 'chat_message.dart';
+import 'botpress_service.dart';
 
-// The main chat screen widget.
+// ---------------------------------------------------------------------------
+// Chat Screen
+// ---------------------------------------------------------------------------
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -16,39 +18,48 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
-  final BotpressService _botService = BotpressService(); // The API service
+class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
+  final BotpressService _botService = BotpressService();
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<ChatMessage> _messages = []; // List of all messages in the chat.
-  final Set<String> _seenMessageIds =
-      {}; // Tracks message IDs to avoid duplicates.
+  final List<ChatMessage> _messages = [];
+  final Set<String> _seenMessageIds = {};
 
-  // --- Stream Subscriptions (replaces Timer) ---
+  // Animation controllers – one per message for staggered mount animations.
+  final List<AnimationController> _messageAnimControllers = [];
+
   StreamSubscription? _messageSubscription;
-
-  bool _initializing = true; // True while the bot connection is being set up.
-  bool _isBotTyping = false; // True if the bot is "typing".
+  bool _initializing = true;
+  bool _isBotTyping = false;
   Timer? _typingTimeout;
+
+  // Pulsing ring for loading state
+  late AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
-    _initBotpress(); // Start the bot connection process.
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+    _initBotpress();
   }
 
   @override
   void dispose() {
-    // --- Cancel subscriptions and dispose the service ---
     _messageSubscription?.cancel();
-    _botService.dispose(); // This closes the WebSocket connection.
+    _botService.dispose();
     _typingTimeout?.cancel();
     _textController.dispose();
     _scrollController.dispose();
+    _pulseController.dispose();
+    for (final c in _messageAnimControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  // Animates the scroll position to the bottom of the list.
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -61,13 +72,9 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // Initializes the connection to Botpress and starts listening to streams.
   Future<void> _initBotpress() async {
     try {
-      // 1. Initialize the Botpress service.
       await _botService.initialize();
-
-      // 2. Listen to the message and typing streams.
       _messageSubscription = _botService.messageStream.listen(
         _onBotMessageReceived,
       );
@@ -78,24 +85,30 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Handles new messages received from the bot.
   void _onBotMessageReceived(ChatMessage message) {
     if (message.isUser) return;
-
-    // Skip duplicate messages.
     if (_seenMessageIds.contains(message.id)) return;
 
     if (mounted) {
       setState(() {
-        _isBotTyping = false; // Bot is no longer typing.
-        _messages.add(message);
+        _isBotTyping = false;
+        _addMessageWithAnimation(message);
         _seenMessageIds.add(message.id);
       });
       _scrollToBottom();
     }
   }
 
-  // Adds an error message to the chat UI.
+  void _addMessageWithAnimation(ChatMessage message) {
+    final controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _messageAnimControllers.add(controller);
+    _messages.add(message);
+    controller.forward();
+  }
+
   void _showError(String message) {
     final botMessage = ChatMessage(
       text: 'Error: $message',
@@ -104,14 +117,13 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (mounted) {
       setState(() {
-        _isBotTyping = false; // Stop typing on error.
-        _messages.add(botMessage);
+        _isBotTyping = false;
+        _addMessageWithAnimation(botMessage);
       });
       _scrollToBottom();
     }
   }
 
-  // Called when the user presses the send button.
   void _handleSendPressed() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
@@ -123,145 +135,66 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (mounted) {
       setState(() {
-        _messages.add(userMessage);
+        _addMessageWithAnimation(userMessage);
         _isBotTyping = true;
       });
     }
     _scrollToBottom();
 
-    // // Send the message to the API.
-    // try {
-    //   final ok = await _botService.sendTextMessage(text);
-    //   if (!ok) {
-    //     _showError('Failed to send message');
-    //   }
-    //   // The bot's reply will arrive via the stream listener.
-    // } catch (e) {
-    //   _showError('Send error: $e');
-    // }
-
     _textController.clear();
     _typingTimeout?.cancel();
     _typingTimeout = Timer(const Duration(seconds: 15), () {
-      if (mounted) {
-        setState(() {
-          _isBotTyping = false;
-        });
-      }
+      if (mounted) setState(() => _isBotTyping = false);
     });
-    await _botService.sendTextMessage(
-      text,
-    ); // Just send it. The stream will update the UI.
+    await _botService.sendTextMessage(text);
   }
+
+  // =========================================================================
+  // BUILD
+  // =========================================================================
 
   @override
   Widget build(BuildContext context) {
     final theme = ThemeScope.of(context);
     final c = theme.colors;
+    final isDark = theme.isDarkMode;
 
     return Scaffold(
-      backgroundColor: c.background,
-      // Use a Stack to layer the background gradient.
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          // Blurred gradient background.
-          Positioned.fill(
-            child: Align(
-              alignment: Alignment.center,
-              child: ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 100.0, sigmaY: 100.0),
-                child: Container(
-                  width: MediaQuery.of(context).size.width * 1.5,
-                  height: MediaQuery.of(context).size.height * 0.7,
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
+          // ---- Background gradient (light) or solid black (dark) ----
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
+            decoration: BoxDecoration(
+              gradient: isDark
+                  ? null
+                  : const LinearGradient(
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
                       colors: [
-                        c.gradientStart.withOpacity(0.6),
-                        c.gradientMid.withOpacity(0.6),
-                        c.gradientEnd.withOpacity(0.6),
+                        Color(0xFFFF8A50),
+                        Color(0xFF64B5F6),
+                        Color(0xFF1E88E5),
                       ],
-                      radius: 0.8,
                     ),
-                  ),
-                ),
-              ),
+              color: isDark ? Colors.black : null,
             ),
           ),
-          // Main chat UI.
+
+          // ---- Main UI ----
           SafeArea(
             child: _initializing
-                ? Center(child: CircularProgressIndicator(color: c.accent))
+                ? _buildLoadingState(c, isDark)
                 : Column(
                     children: [
-                      // --- Header: Logo, Title, and Theme Toggle ---
-                      const SizedBox(height: 16),
-                      Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // Centered logo + title
-                          Column(
-                            children: [
-                              Icon(
-                                Icons.auto_awesome,
-                                color: c.accent,
-                                size: 40,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Ask BUddy anything',
-                                style: GoogleFonts.inter(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w600,
-                                  color: c.primaryText,
-                                ),
-                              ),
-                            ],
-                          ),
-                          // Theme toggle button (top-right)
-                          Positioned(
-                            right: 12,
-                            top: 0,
-                            child: IconButton(
-                              icon: Icon(
-                                theme.isDarkMode
-                                    ? Icons.light_mode_rounded
-                                    : Icons.dark_mode_rounded,
-                                color: c.accent,
-                              ),
-                              tooltip: theme.isDarkMode
-                                  ? 'Switch to Light Mode'
-                                  : 'Switch to Dark Mode',
-                              onPressed: () => theme.toggleTheme(),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // --- Message List ---
+                      _buildGlassHeader(theme, c, isDark),
                       Expanded(
                         child: _messages.isEmpty && !_isBotTyping
-                            ? _buildEmptyState() // Show suggestions if chat is empty.
-                            : ListView.builder(
-                                controller: _scrollController,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 8.0,
-                                ),
-                                itemCount:
-                                    _messages.length + (_isBotTyping ? 1 : 0),
-                                itemBuilder: (context, index) {
-                                  if (_isBotTyping &&
-                                      index == _messages.length) {
-                                    return _buildTypingIndicator();
-                                  }
-                                  final message = _messages[index];
-                                  return _buildMessageBubble(message);
-                                },
-                              ),
+                            ? _buildEmptyState(c, isDark)
+                            : _buildMessageList(c, isDark),
                       ),
-
-                      // --- Text Input Field ---
-                      _buildTextInputBar(),
+                      _buildInputBar(c, isDark),
                     ],
                   ),
           ),
@@ -270,33 +203,203 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // Builds the widget shown when the chat list is empty.
-  Widget _buildEmptyState() {
-    final c = ThemeScope.of(context).colors;
+  // =========================================================================
+  // LOADING STATE — pulsing rings
+  // =========================================================================
+
+  Widget _buildLoadingState(AppThemeColors c, bool isDark) {
+    return Center(
+      child: SizedBox(
+        width: 120,
+        height: 120,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Pulsing ring
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, _) {
+                final v = _pulseController.value;
+                return Transform.scale(
+                  scale: 1.0 + v * 0.5,
+                  child: Opacity(
+                    opacity: (1 - v).clamp(0.0, 0.5),
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.6),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            Icon(
+              Icons.auto_awesome_rounded,
+              color: isDark ? Colors.white : Colors.white,
+              size: 32,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // GLASS HEADER
+  // =========================================================================
+
+  Widget _buildGlassHeader(ThemeProvider theme, AppThemeColors c, bool isDark) {
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          decoration: BoxDecoration(
+            color: c.headerGlass,
+            border: Border(bottom: BorderSide(color: c.headerBorder)),
+          ),
+          child: Row(
+            children: [
+              // Logo
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : Colors.white.withValues(alpha: 0.2),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Title
+              Expanded(
+                child: Text(
+                  'BUddy',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 3,
+                    color: isDark ? Colors.white : Colors.white,
+                  ),
+                ),
+              ),
+              // Theme toggle
+              GestureDetector(
+                onTap: () => theme.toggleTheme(),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.white.withValues(alpha: 0.15),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Icon(
+                    theme.isDarkMode
+                        ? Icons.light_mode_rounded
+                        : Icons.dark_mode_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // EMPTY STATE — suggestion chips
+  // =========================================================================
+
+  Widget _buildEmptyState(AppThemeColors c, bool isDark) {
     return SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'Suggestions on what to ask BUddy',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: c.secondaryText,
+            const SizedBox(height: 40),
+            // Big icon
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.white.withValues(alpha: 0.2),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : Colors.white.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Icon(
+                Icons.chat_bubble_outline_rounded,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.6)
+                    : Colors.white,
+                size: 30,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+            Text(
+              'Ask me anything',
+              style: GoogleFonts.inter(
+                fontSize: 22,
+                fontWeight: FontWeight.w300,
+                letterSpacing: 1,
+                color: isDark ? Colors.white : Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Here are some ideas to get started',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w300,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.4)
+                    : Colors.white.withValues(alpha: 0.75),
+              ),
+            ),
+            const SizedBox(height: 28),
             Wrap(
-              spacing: 8.0,
-              runSpacing: 8.0,
+              spacing: 8,
+              runSpacing: 8,
               alignment: WrapAlignment.center,
               children: [
-                _buildSuggestionChip('What can I ask you to do?'),
-                _buildSuggestionChip('How do I apply for financial aid?'),
-                _buildSuggestionChip('What are the scholarship requirements?'),
-                _buildSuggestionChip('How to join student organizations?'),
+                _buildChip('What can I ask you to do?', c, isDark),
+                _buildChip('How do I apply for financial aid?', c, isDark),
+                _buildChip('Scholarship requirements?', c, isDark),
+                _buildChip('How to join student orgs?', c, isDark),
               ],
             ),
           ],
@@ -305,77 +408,148 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // Builds a single clickable suggestion chip.
-  Widget _buildSuggestionChip(String text) {
-    final c = ThemeScope.of(context).colors;
+  Widget _buildChip(String text, AppThemeColors c, bool isDark) {
     return GestureDetector(
       onTap: () {
         _textController.text = text;
-        _handleSendPressed(); // Send the suggestion text as a message.
+        _handleSendPressed();
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: c.userBubble.withOpacity(0.7),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          text,
-          style: GoogleFonts.inter(
-            color: c.primaryText,
-            fontWeight: FontWeight.w500,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: c.chipBackground,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: c.chipBorder),
+            ),
+            child: Text(
+              text,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.8)
+                    : Colors.white,
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  // Builds a single chat bubble for a message.
-  Widget _buildMessageBubble(ChatMessage message) {
-    final c = ThemeScope.of(context).colors;
-    return Container(
-      alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+  // =========================================================================
+  // MESSAGE LIST
+  // =========================================================================
+
+  Widget _buildMessageList(AppThemeColors c, bool isDark) {
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      itemCount: _messages.length + (_isBotTyping ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (_isBotTyping && index == _messages.length) {
+          return _buildTypingIndicator(c, isDark);
+        }
+        final message = _messages[index];
+        final anim = _messageAnimControllers[index];
+        return _AnimatedMessageBubble(
+          animation: anim,
+          child: _buildBubble(message, c, isDark),
+        );
+      },
+    );
+  }
+
+  // =========================================================================
+  // MESSAGE BUBBLE
+  // =========================================================================
+
+  Widget _buildBubble(ChatMessage message, AppThemeColors c, bool isDark) {
+    final isUser = message.isUser;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
-        crossAxisAlignment: message.isUser
+        crossAxisAlignment: isUser
             ? CrossAxisAlignment.end
             : CrossAxisAlignment.start,
         children: [
-          // "ME" or "BUddy" label.
-          Text(
-            message.isUser ? 'ME' : 'BUddy',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: c.secondaryText,
-              fontWeight: FontWeight.w500,
+          // Label
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4, left: 4, right: 4),
+            child: Text(
+              isUser ? 'YOU' : 'BUddy',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 1.5,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.35)
+                    : Colors.white.withValues(alpha: 0.7),
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          // The message bubble container.
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75,
-            ),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-              decoration: BoxDecoration(
-                color: message.isUser ? c.userBubble : c.aiBubble,
-                borderRadius: BorderRadius.circular(16),
-                border: message.isUser ? null : Border.all(color: c.aiBorder),
-                boxShadow: const [
-                  BoxShadow(
-                    offset: Offset(0, 2),
-                    blurRadius: 3.0,
-                    color: Colors.black12,
-                  ),
-                ],
+          // Bubble
+          Align(
+            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.78,
               ),
-              child: Text(
-                message.text,
-                style: GoogleFonts.inter(
-                  color: c.primaryText,
-                  fontSize: 16,
-                  height: 1.4, // Line height for readability.
+              child: ClipRRect(
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(20),
+                  topRight: const Radius.circular(20),
+                  bottomLeft: Radius.circular(isUser ? 20 : 6),
+                  bottomRight: Radius.circular(isUser ? 6 : 20),
+                ),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isUser
+                          ? (isDark
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.9))
+                          : (isDark
+                                ? Colors.white.withValues(alpha: 0.06)
+                                : Colors.white.withValues(alpha: 0.2)),
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(20),
+                        topRight: const Radius.circular(20),
+                        bottomLeft: Radius.circular(isUser ? 20 : 6),
+                        bottomRight: Radius.circular(isUser ? 6 : 20),
+                      ),
+                      border: Border.all(
+                        color: isUser
+                            ? Colors.transparent
+                            : (isDark
+                                  ? Colors.white.withValues(alpha: 0.1)
+                                  : Colors.white.withValues(alpha: 0.3)),
+                      ),
+                    ),
+                    child: Text(
+                      message.text,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                        height: 1.5,
+                        color: isUser
+                            ? (isDark ? Colors.black : const Color(0xFF1A1A2E))
+                            : (isDark
+                                  ? Colors.white.withValues(alpha: 0.9)
+                                  : Colors.white),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -385,46 +559,67 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // Builds the "BUddy is typing" animation.
-  Widget _buildTypingIndicator() {
-    final c = ThemeScope.of(context).colors;
-    return Container(
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+  // =========================================================================
+  // TYPING INDICATOR
+  // =========================================================================
+
+  Widget _buildTypingIndicator(AppThemeColors c, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // "BUddy" label.
-          Text(
-            'BUddy',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: c.secondaryText,
-              fontWeight: FontWeight.w500,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4, left: 4),
+            child: Text(
+              'BUddy',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 1.5,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.35)
+                    : Colors.white.withValues(alpha: 0.7),
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          // The bubble containing the animation.
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.75,
+          ClipRRect(
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+              bottomLeft: Radius.circular(6),
+              bottomRight: Radius.circular(20),
             ),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-              decoration: BoxDecoration(
-                color: c.aiBubble,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: c.aiBorder),
-                boxShadow: const [
-                  BoxShadow(
-                    offset: Offset(0, 2),
-                    blurRadius: 3.0,
-                    color: Colors.black12,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 20,
+                ),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : Colors.white.withValues(alpha: 0.2),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                    bottomLeft: Radius.circular(6),
+                    bottomRight: Radius.circular(20),
                   ),
-                ],
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.1)
+                        : Colors.white.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: SpinKitThreeBounce(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.6)
+                      : Colors.white,
+                  size: 18,
+                ),
               ),
-              // The 3-dot bounce animation.
-              child: SpinKitThreeBounce(color: c.accent, size: 20.0),
             ),
           ),
         ],
@@ -432,50 +627,126 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // Builds the text input field and send button at the bottom.
-  Widget _buildTextInputBar() {
-    final c = ThemeScope.of(context).colors;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-      color: Colors.transparent,
-      child: Container(
-        // The rounded input bar.
-        decoration: BoxDecoration(
-          color: c.inputBarBackground,
-          borderRadius: BorderRadius.circular(30.0),
-          border: Border.all(color: c.aiBorder),
-          boxShadow: const [
-            BoxShadow(
-              offset: Offset(0, 4),
-              blurRadius: 10.0,
-              color: Colors.black12,
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Text field.
-            Expanded(
-              child: TextField(
-                controller: _textController,
-                style: GoogleFonts.inter(fontSize: 16, color: c.primaryText),
-                decoration: InputDecoration(
-                  hintText: 'Ask me anything about student affairs',
-                  hintStyle: GoogleFonts.inter(color: c.secondaryText),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.only(left: 20, right: 12),
-                ),
-                onSubmitted: (_) => _handleSendPressed(),
+  // =========================================================================
+  // INPUT BAR — glassmorphism + gradient send button
+  // =========================================================================
+
+  Widget _buildInputBar(AppThemeColors c, bool isDark) {
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.03)
+                : Colors.white.withValues(alpha: 0.08),
+            border: Border(
+              top: BorderSide(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.white.withValues(alpha: 0.2),
               ),
             ),
-            // Send button.
-            IconButton(
-              icon: Icon(Icons.near_me_outlined, color: c.accent),
-              onPressed: _handleSendPressed,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark
+                  ? c.inputBarBackground
+                  : Colors.white.withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: isDark
+                    ? c.inputBarBorder
+                    : Colors.white.withValues(alpha: 0.3),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  offset: const Offset(0, 4),
+                  blurRadius: 20,
+                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
+                ),
+              ],
             ),
-            const SizedBox(width: 4),
-          ],
+            child: Row(
+              children: [
+                const SizedBox(width: 20),
+                Expanded(
+                  child: TextField(
+                    controller: _textController,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                      color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Ask me anything...',
+                      hintStyle: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w300,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.35)
+                            : const Color(0xFF9CA3AF),
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onSubmitted: (_) => _handleSendPressed(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Gradient send button
+                GestureDetector(
+                  onTap: _handleSendPressed,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: isDark
+                          ? null
+                          : const LinearGradient(
+                              colors: [Color(0xFFFF8A50), Color(0xFF1E88E5)],
+                            ),
+                      color: isDark ? Colors.white : null,
+                    ),
+                    child: Icon(
+                      Icons.arrow_upward_rounded,
+                      color: isDark ? Colors.black : Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+            ),
+          ),
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Animated Message Wrapper — opacity + slide-up on mount
+// ---------------------------------------------------------------------------
+class _AnimatedMessageBubble extends AnimatedWidget {
+  final Widget child;
+
+  const _AnimatedMessageBubble({
+    required Animation<double> animation,
+    required this.child,
+  }) : super(listenable: animation);
+
+  @override
+  Widget build(BuildContext context) {
+    final anim = listenable as Animation<double>;
+    final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+    return Opacity(
+      opacity: curved.value,
+      child: Transform.translate(
+        offset: Offset(0, 12 * (1 - curved.value)),
+        child: child,
       ),
     );
   }

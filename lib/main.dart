@@ -1,22 +1,20 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'splash_screen.dart'; // Import the new splash screen file
-import 'theme_provider.dart'; // Import theme provider
+import 'splash_screen.dart';
+import 'theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Load the .env file before running the app
   await dotenv.load(fileName: ".env");
 
-  // Load saved theme preference
   final themeProvider = ThemeProvider();
   await themeProvider.loadFromPrefs();
 
   runApp(BUddyApp(themeProvider: themeProvider));
 }
 
-// The root widget of the application.
 class BUddyApp extends StatelessWidget {
   final ThemeProvider themeProvider;
 
@@ -30,6 +28,21 @@ class BUddyApp extends StatelessWidget {
         animation: themeProvider,
         builder: (context, _) {
           final colors = themeProvider.colors;
+          final isDark = themeProvider.isDarkMode;
+
+          // Match system chrome to current theme
+          SystemChrome.setSystemUIOverlayStyle(
+            isDark
+                ? SystemUiOverlayStyle.light.copyWith(
+                    statusBarColor: Colors.transparent,
+                    systemNavigationBarColor: Colors.black,
+                  )
+                : SystemUiOverlayStyle.dark.copyWith(
+                    statusBarColor: Colors.transparent,
+                    systemNavigationBarColor: colors.background,
+                  ),
+          );
+
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             title: 'BUddy',
@@ -45,11 +58,12 @@ class BUddyApp extends StatelessWidget {
                     displayColor: colors.primaryText,
                   ),
               colorScheme: ColorScheme.fromSeed(
-                seedColor: colors.accent,
+                seedColor: const Color(0xFFFF8A50),
                 brightness: colors.brightness,
               ),
+              splashFactory: InkSparkle.splashFactory,
             ),
-            home: const SplashScreen(), // Start with the splash screen.
+            home: const SplashScreen(),
           );
         },
       ),
