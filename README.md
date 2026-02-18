@@ -25,7 +25,7 @@ By automating routine inquiries, the system enhances service accessibility for s
 
 - **Animated Splash Screen:** A smooth, welcoming animation on app launch.
 - **Modern Chat UI:** A clean, intuitive, and readable chat interface.
-- **Real-time Communication:** Uses WebSockets for instant message delivery and receiving.
+- **Real-time Communication:** Uses HTTP polling for instant message delivery and receiving.
 - **Bot Typing Indicator:** Shows a "BUddy is typing..." animation (`flutter_spinkit`) when the bot is processing a response.
 - **RAG-Powered Responses:** Uses a **Retrieval-Augmented Generation (RAG)** pipeline to provide answers grounded in an official Knowledge Base (university policies, handbooks, PDFs).
 - **Natural Language Understanding:** Leverages an **OpenAI LLM** for advanced intent classification and natural language understanding.
@@ -90,14 +90,11 @@ To run this project locally, follow these steps:
     ```
 
 2.  **Create a `.env` file:**
-    In the root of the project, create a file named `.env`. The `botpress_service.dart` file expects two keys:
+    In the root of the project, create a file named `.env`. The `botpress_service.dart` file expects the following key:
 
     ```.env
     # Your Botpress Chat API Webhook ID
-    BOTPRESS_BASE_URL=https://chat.botpress.cloud/YOUR_WEBHOOK_ID
-
-    # Your Botpress WebSocket URL (same as above, but wss://)
-    BOTPRESS_WEBSOCKET_URL=wss://chat.botpress.cloud/YOUR_WEBHOOK_ID
+    BOTPRESS_WEBHOOK_ID=YOUR_WEBHOOK_ID
     ```
 
 3.  **Install dependencies:**
