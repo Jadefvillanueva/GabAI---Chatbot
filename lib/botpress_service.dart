@@ -179,4 +179,10 @@ class BotpressService {
       debugPrint('Error sending message: $e');
     }
   }
+
+  /// Start a fresh conversation (clears local tracking of old messages).
+  Future<void> startNewConversation() async {
+    _processedMessageIds.clear();
+    await _createConversation();
+  }
 }

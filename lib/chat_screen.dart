@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 
 import 'theme_provider.dart';
@@ -32,6 +33,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _initializing = true;
   bool _isBotTyping = false;
   Timer? _typingTimeout;
+  bool _hasText = false;
+  bool _showScrollToBottom = false;
 
   // Pulsing ring for loading state
   late AnimationController _pulseController;
@@ -43,6 +46,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat();
+    _textController.addListener(_onTextChanged);
+    _scrollController.addListener(_onScroll);
     _initBotpress();
   }
 
@@ -51,6 +56,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _messageSubscription?.cancel();
     _botService.dispose();
     _typingTimeout?.cancel();
+    _textController.removeListener(_onTextChanged);
+    _scrollController.removeListener(_onScroll);
     _textController.dispose();
     _scrollController.dispose();
     _pulseController.dispose();
@@ -127,6 +134,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _handleSendPressed() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
+    HapticFeedback.lightImpact();
 
     final userMessage = ChatMessage(
       text: text,
@@ -147,6 +155,48 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (mounted) setState(() => _isBotTyping = false);
     });
     await _botService.sendTextMessage(text);
+  }
+
+  // =========================================================================
+  // HELPERS
+  // =========================================================================
+
+  void _onTextChanged() {
+    final hasText = _textController.text.trim().isNotEmpty;
+    if (hasText != _hasText) {
+      setState(() => _hasText = hasText);
+    }
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final shouldShow =
+        _scrollController.offset <
+        _scrollController.position.maxScrollExtent - 150;
+    if (shouldShow != _showScrollToBottom && _messages.isNotEmpty) {
+      setState(() => _showScrollToBottom = shouldShow);
+    }
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  Future<void> _handleNewConversation() async {
+    for (final c in _messageAnimControllers) {
+      c.dispose();
+    }
+    setState(() {
+      _messageAnimControllers.clear();
+      _messages.clear();
+      _seenMessageIds.clear();
+      _isBotTyping = false;
+      _showScrollToBottom = false;
+    });
+    await _botService.startNewConversation();
   }
 
   // =========================================================================
@@ -190,9 +240,38 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     children: [
                       _buildGlassHeader(theme, c, isDark),
                       Expanded(
-                        child: _messages.isEmpty && !_isBotTyping
-                            ? _buildEmptyState(c, isDark)
-                            : _buildMessageList(c, isDark),
+                        child: Stack(
+                          children: [
+                            _messages.isEmpty && !_isBotTyping
+                                ? _buildEmptyState(c, isDark)
+                                : _buildMessageList(c, isDark),
+                            Positioned(
+                              bottom: 12,
+                              left: 0,
+                              right: 0,
+                              child: Center(
+                                child: IgnorePointer(
+                                  ignoring: !_showScrollToBottom,
+                                  child: AnimatedOpacity(
+                                    opacity: _showScrollToBottom ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: AnimatedScale(
+                                      scale: _showScrollToBottom ? 1.0 : 0.5,
+                                      duration: const Duration(
+                                        milliseconds: 250,
+                                      ),
+                                      curve: Curves.easeOutBack,
+                                      child: _buildScrollToBottomButton(
+                                        c,
+                                        isDark,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       _buildInputBar(c, isDark),
                     ],
@@ -261,47 +340,109 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
             color: c.headerGlass,
             border: Border(bottom: BorderSide(color: c.headerBorder)),
           ),
           child: Row(
             children: [
-              // Logo
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : Colors.white.withValues(alpha: 0.2),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.35),
+              // Logo with online indicator
+              Stack(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.white.withValues(alpha: 0.2),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.15)
+                            : Colors.white.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
-                ),
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF34D399),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.black
+                              : const Color.fromARGB(255, 17, 165, 96),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(width: 12),
-              // Title
+              // Title + status
               Expanded(
-                child: Text(
-                  'BUddy',
-                  style: GoogleFonts.inter(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w300,
-                    letterSpacing: 3,
-                    color: isDark ? Colors.white : Colors.white,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'BUddy',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Online',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF34D399),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // New conversation
+              GestureDetector(
+                onTap: _handleNewConversation,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.white.withValues(alpha: 0.15),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.edit_outlined,
+                    color: Colors.white,
+                    size: 18,
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
               // Theme toggle
               GestureDetector(
                 onTap: () => theme.toggleTheme(),
@@ -345,16 +486,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
         child: Column(
           children: [
-            const SizedBox(height: 40),
-            // Big icon
+            const SizedBox(height: 48),
+            // Greeting icon
             Container(
-              width: 72,
-              height: 72,
+              width: 80,
+              height: 80,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.06)
-                    : Colors.white.withValues(alpha: 0.2),
+                    : Colors.white.withValues(alpha: 0.18),
                 border: Border.all(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.1)
@@ -362,41 +503,52 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
               child: Icon(
-                Icons.chat_bubble_outline_rounded,
+                Icons.waving_hand_rounded,
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.6)
                     : Colors.white,
-                size: 30,
+                size: 36,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Text(
-              'Ask me anything',
+              _getGreeting(),
               style: GoogleFonts.inter(
-                fontSize: 22,
-                fontWeight: FontWeight.w300,
-                letterSpacing: 1,
-                color: isDark ? Colors.white : Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Here are some ideas to get started',
+              "I'm BUddy, your student helper.",
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w300,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.45)
+                    : Colors.white.withValues(alpha: 0.8),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Try asking me anything:',
               style: GoogleFonts.inter(
                 fontSize: 13,
                 fontWeight: FontWeight.w300,
                 color: isDark
-                    ? Colors.white.withValues(alpha: 0.4)
-                    : Colors.white.withValues(alpha: 0.75),
+                    ? Colors.white.withValues(alpha: 0.35)
+                    : Colors.white.withValues(alpha: 0.65),
               ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 32),
             Wrap(
               spacing: 8,
-              runSpacing: 8,
+              runSpacing: 10,
               alignment: WrapAlignment.center,
               children: [
-                _buildChip('What can I ask you to do?', c, isDark),
+                _buildChip('What can you help me with?', c, isDark),
                 _buildChip('How do I apply for financial aid?', c, isDark),
                 _buildChip('Scholarship requirements?', c, isDark),
                 _buildChip('How to join student orgs?', c, isDark),
@@ -415,15 +567,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _handleSendPressed();
       },
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             decoration: BoxDecoration(
-              color: c.chipBackground,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: c.chipBorder),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.white.withValues(alpha: 0.35),
+              ),
             ),
             child: Text(
               text,
@@ -480,15 +638,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         children: [
           // Label
           Padding(
-            padding: const EdgeInsets.only(bottom: 4, left: 4, right: 4),
+            padding: const EdgeInsets.only(bottom: 5, left: 6, right: 6),
             child: Text(
-              isUser ? 'YOU' : 'BUddy',
+              isUser ? 'You' : 'BUddy',
               style: GoogleFonts.inter(
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.w500,
-                letterSpacing: 1.5,
+                letterSpacing: 0.8,
                 color: isDark
-                    ? Colors.white.withValues(alpha: 0.35)
+                    ? Colors.white.withValues(alpha: 0.3)
                     : Colors.white.withValues(alpha: 0.7),
               ),
             ),
@@ -498,7 +656,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.78,
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.only(
@@ -535,6 +693,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                   ? Colors.white.withValues(alpha: 0.1)
                                   : Colors.white.withValues(alpha: 0.3)),
                       ),
+                      boxShadow: isUser
+                          ? [
+                              BoxShadow(
+                                offset: const Offset(0, 2),
+                                blurRadius: 12,
+                                color: Colors.black.withValues(
+                                  alpha: isDark ? 0.2 : 0.08,
+                                ),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Text(
                       message.text,
@@ -695,24 +864,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Gradient send button
+                // Animated send button
                 GestureDetector(
-                  onTap: _handleSendPressed,
-                  child: Container(
+                  onTap: _hasText ? _handleSendPressed : null,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOut,
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: isDark
-                          ? null
-                          : const LinearGradient(
-                              colors: [Color(0xFFFF8A50), Color(0xFF1E88E5)],
-                            ),
-                      color: isDark ? Colors.white : null,
+                      color: _hasText
+                          ? (isDark ? Colors.white : const Color(0xFFFF8A50))
+                          : (isDark
+                                ? Colors.white.withValues(alpha: 0.06)
+                                : Colors.black.withValues(alpha: 0.06)),
                     ),
                     child: Icon(
                       Icons.arrow_upward_rounded,
-                      color: isDark ? Colors.black : Colors.white,
+                      color: _hasText
+                          ? (isDark ? Colors.black : Colors.white)
+                          : (isDark
+                                ? Colors.white.withValues(alpha: 0.2)
+                                : Colors.black.withValues(alpha: 0.2)),
                       size: 20,
                     ),
                   ),
@@ -721,6 +895,43 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // SCROLL TO BOTTOM BUTTON
+  // =========================================================================
+
+  Widget _buildScrollToBottomButton(AppThemeColors c, bool isDark) {
+    return GestureDetector(
+      onTap: _scrollToBottom,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+          boxShadow: [
+            BoxShadow(
+              offset: const Offset(0, 2),
+              blurRadius: 12,
+              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
+            ),
+          ],
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.black.withValues(alpha: 0.08),
+          ),
+        ),
+        child: Icon(
+          Icons.keyboard_arrow_down_rounded,
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.7)
+              : const Color(0xFF1A1A2E),
+          size: 24,
         ),
       ),
     );
