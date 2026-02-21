@@ -55,7 +55,7 @@ class BotpressService {
   /// Polls the server every 2 seconds for new messages
   void _startPolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       if (_conversationId != null && _userKey != null) {
         await _fetchNewMessages();
       }

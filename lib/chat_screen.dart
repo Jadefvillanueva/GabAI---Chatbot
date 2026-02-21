@@ -51,6 +51,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _initBotpress();
   }
 
+  void _stopPulseIfNotNeeded() {
+    // Stop the infinite pulse animation when it's no longer visible
+    if (!_initializing && _messages.isNotEmpty) {
+      if (_pulseController.isAnimating) _pulseController.stop();
+    }
+  }
+
   @override
   void dispose() {
     _messageSubscription?.cancel();
@@ -88,7 +95,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     } catch (e) {
       if (mounted) _showError('Init error: $e');
     } finally {
-      if (mounted) setState(() => _initializing = false);
+      if (mounted) {
+        setState(() => _initializing = false);
+        _stopPulseIfNotNeeded();
+      }
     }
   }
 
@@ -114,6 +124,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _messageAnimControllers.add(controller);
     _messages.add(message);
     controller.forward();
+    _stopPulseIfNotNeeded();
   }
 
   void _showError(String message) {
@@ -580,7 +591,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildGlassHeader(ThemeProvider theme, AppThemeColors c, bool isDark) {
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
@@ -846,49 +857,43 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _textController.text = text;
         _handleSendPressed();
       },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            decoration: BoxDecoration(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.white.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 11,
               color: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : Colors.white.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.1)
-                    : Colors.white.withValues(alpha: 0.35),
+                  ? Colors.white.withValues(alpha: 0.4)
+                  : Colors.white.withValues(alpha: 0.7),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                text,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.8)
+                      : Colors.white,
+                ),
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 11,
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.4)
-                      : Colors.white.withValues(alpha: 0.7),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    text,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ),
       ),
     );
@@ -953,66 +958,55 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft: Radius.circular(isUser ? 20 : 6),
-                  bottomRight: Radius.circular(isUser ? 6 : 20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 16,
                 ),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isUser
-                          ? (isDark
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.9))
-                          : (isDark
-                                ? Colors.white.withValues(alpha: 0.06)
-                                : Colors.white.withValues(alpha: 0.2)),
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(20),
-                        topRight: const Radius.circular(20),
-                        bottomLeft: Radius.circular(isUser ? 20 : 6),
-                        bottomRight: Radius.circular(isUser ? 6 : 20),
-                      ),
-                      border: Border.all(
-                        color: isUser
-                            ? Colors.transparent
-                            : (isDark
-                                  ? Colors.white.withValues(alpha: 0.1)
-                                  : Colors.white.withValues(alpha: 0.3)),
-                      ),
-                      boxShadow: isUser
-                          ? [
-                              BoxShadow(
-                                offset: const Offset(0, 2),
-                                blurRadius: 12,
-                                color: Colors.black.withValues(
-                                  alpha: isDark ? 0.2 : 0.08,
-                                ),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Text(
-                      message.text,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w400,
-                        height: 1.5,
-                        color: isUser
-                            ? (isDark ? Colors.black : const Color(0xFF1A1A2E))
-                            : (isDark
-                                  ? Colors.white.withValues(alpha: 0.9)
-                                  : Colors.white),
-                      ),
-                    ),
+                decoration: BoxDecoration(
+                  color: isUser
+                      ? (isDark
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.9))
+                      : (isDark
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.white.withValues(alpha: 0.2)),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(20),
+                    topRight: const Radius.circular(20),
+                    bottomLeft: Radius.circular(isUser ? 20 : 6),
+                    bottomRight: Radius.circular(isUser ? 6 : 20),
+                  ),
+                  border: Border.all(
+                    color: isUser
+                        ? Colors.transparent
+                        : (isDark
+                              ? Colors.white.withValues(alpha: 0.1)
+                              : Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  boxShadow: isUser
+                      ? [
+                          BoxShadow(
+                            offset: const Offset(0, 2),
+                            blurRadius: 12,
+                            color: Colors.black.withValues(
+                              alpha: isDark ? 0.2 : 0.08,
+                            ),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  message.text,
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                    height: 1.5,
+                    color: isUser
+                        ? (isDark ? Colors.black : const Color(0xFF1A1A2E))
+                        : (isDark
+                              ? Colors.white.withValues(alpha: 0.9)
+                              : Colors.white),
                   ),
                 ),
               ),
@@ -1047,43 +1041,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-          ClipRRect(
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(20),
-              topRight: Radius.circular(20),
-              bottomLeft: Radius.circular(6),
-              bottomRight: Radius.circular(20),
-            ),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 14,
-                  horizontal: 20,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.06)
-                      : Colors.white.withValues(alpha: 0.2),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                    bottomLeft: Radius.circular(6),
-                    bottomRight: Radius.circular(20),
-                  ),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.1)
-                        : Colors.white.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: SpinKitThreeBounce(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.6)
-                      : Colors.white,
-                  size: 18,
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.white.withValues(alpha: 0.2),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+                bottomLeft: Radius.circular(6),
+                bottomRight: Radius.circular(20),
               ),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.white.withValues(alpha: 0.3),
+              ),
+            ),
+            child: SpinKitThreeBounce(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.6)
+                  : Colors.white,
+              size: 18,
             ),
           ),
         ],
@@ -1098,7 +1078,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildInputBar(AppThemeColors c, bool isDark) {
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           decoration: BoxDecoration(
