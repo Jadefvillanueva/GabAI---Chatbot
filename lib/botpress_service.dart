@@ -63,13 +63,21 @@ class BotpressService {
   }
 
   Future<void> _fetchNewMessages() async {
+    // Capture the conversation ID before the async gap so we can detect
+    // if a new conversation was started while this request was in-flight.
+    final targetConversationId = _conversationId;
     try {
-      final url = Uri.parse('$API_URL/conversations/$_conversationId/messages');
+      final url = Uri.parse(
+        '$API_URL/conversations/$targetConversationId/messages',
+      );
 
       final res = await http.get(
         url,
         headers: {'Content-Type': 'application/json', 'x-user-key': _userKey!},
       );
+
+      // If the conversation changed while we were waiting, discard results.
+      if (_conversationId != targetConversationId) return;
 
       if (res.statusCode == 200) {
         final json = jsonDecode(res.body);
@@ -182,7 +190,11 @@ class BotpressService {
 
   /// Start a fresh conversation (clears local tracking of old messages).
   Future<void> startNewConversation() async {
+    // Stop polling so old messages aren't re-fetched while we reset.
+    _pollTimer?.cancel();
     _processedMessageIds.clear();
     await _createConversation();
+    // Resume polling against the new conversation.
+    _startPolling();
   }
 }

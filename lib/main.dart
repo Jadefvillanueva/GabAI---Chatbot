@@ -49,7 +49,7 @@ class BUddyApp extends StatelessWidget {
             theme: ThemeData(
               brightness: colors.brightness,
               primaryColor: colors.accent,
-              scaffoldBackgroundColor: colors.background,
+              scaffoldBackgroundColor: Colors.black,
               textTheme:
                   GoogleFonts.interTextTheme(
                     ThemeData(brightness: colors.brightness).textTheme,

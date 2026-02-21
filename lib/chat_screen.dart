@@ -185,18 +185,205 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return 'Good evening';
   }
 
+  /// Shows a styled confirmation dialog before starting a new conversation.
+  Future<void> _showNewConversationDialog() async {
+    HapticFeedback.mediumImpact();
+    final theme = ThemeScope.of(context);
+    final isDark = theme.isDarkMode;
+
+    final confirmed = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutBack,
+        );
+        return ScaleTransition(
+          scale: curved,
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.82,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 32,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.06),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        offset: const Offset(0, 16),
+                        blurRadius: 48,
+                        color: Colors.black.withValues(alpha: 0.25),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'New Conversation',
+                        style: GoogleFonts.inter(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF1A1A2E),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Start fresh? Your current chat\nwill be cleared.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          height: 1.6,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.45)
+                              : const Color(0xFF6B7280),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      // Buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => Navigator.of(context).pop(false),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 15,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.05)
+                                      : const Color(0xFFF3F4F6),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? Colors.white.withValues(alpha: 0.08)
+                                        : const Color(0xFFE5E7EB),
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Cancel',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark
+                                          ? Colors.white.withValues(alpha: 0.6)
+                                          : const Color(0xFF6B7280),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                Navigator.of(context).pop(true);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 15,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  gradient: isDark
+                                      ? null
+                                      : const LinearGradient(
+                                          colors: [
+                                            Color(0xFFFF8A50),
+                                            Color(0xFFFF6D3A),
+                                          ],
+                                        ),
+                                  color: isDark ? Colors.white : null,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      offset: const Offset(0, 4),
+                                      blurRadius: 12,
+                                      color: isDark
+                                          ? Colors.transparent
+                                          : const Color(
+                                              0xFFFF8A50,
+                                            ).withValues(alpha: 0.3),
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Start New',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? Colors.black
+                                          : Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _handleNewConversation();
+    }
+  }
+
   Future<void> _handleNewConversation() async {
+    // Stop polling and create new conversation FIRST, so no in-flight
+    // fetches can sneak old messages back into the cleared UI.
+    await _botService.startNewConversation();
+
     for (final c in _messageAnimControllers) {
       c.dispose();
     }
-    setState(() {
-      _messageAnimControllers.clear();
-      _messages.clear();
-      _seenMessageIds.clear();
-      _isBotTyping = false;
-      _showScrollToBottom = false;
-    });
-    await _botService.startNewConversation();
+    if (mounted) {
+      setState(() {
+        _messageAnimControllers.clear();
+        _messages.clear();
+        _seenMessageIds.clear();
+        _isBotTyping = false;
+        _showScrollToBottom = false;
+      });
+    }
   }
 
   // =========================================================================
@@ -216,9 +403,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           // ---- Background gradient (light) or solid black (dark) ----
           AnimatedContainer(
             duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
             decoration: BoxDecoration(
               gradient: isDark
-                  ? null
+                  ? const LinearGradient(
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                      colors: [Colors.black, Colors.black, Colors.black],
+                    )
                   : const LinearGradient(
                       begin: Alignment.topRight,
                       end: Alignment.bottomLeft,
@@ -228,7 +420,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         Color(0xFF1E88E5),
                       ],
                     ),
-              color: isDark ? Colors.black : null,
             ),
           ),
 
@@ -288,45 +479,96 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Widget _buildLoadingState(AppThemeColors c, bool isDark) {
     return Center(
-      child: SizedBox(
-        width: 120,
-        height: 120,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Pulsing ring
-            AnimatedBuilder(
-              animation: _pulseController,
-              builder: (context, _) {
-                final v = _pulseController.value;
-                return Transform.scale(
-                  scale: 1.0 + v * 0.5,
-                  child: Opacity(
-                    opacity: (1 - v).clamp(0.0, 0.5),
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.6),
-                          width: 2,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 120,
+            height: 120,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Outer pulsing ring
+                AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, _) {
+                    final v = _pulseController.value;
+                    return Transform.scale(
+                      scale: 1.0 + v * 0.5,
+                      child: Opacity(
+                        opacity: (1 - v).clamp(0.0, 0.5),
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.6),
+                              width: 2,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+                // Inner pulsing ring (offset phase)
+                AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, _) {
+                    final v = (_pulseController.value + 0.5) % 1.0;
+                    return Transform.scale(
+                      scale: 1.0 + v * 0.35,
+                      child: Opacity(
+                        opacity: (1 - v).clamp(0.0, 0.35),
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.4),
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  color: isDark ? Colors.white : Colors.white,
+                  size: 32,
+                ),
+              ],
             ),
-            Icon(
-              Icons.auto_awesome_rounded,
-              color: isDark ? Colors.white : Colors.white,
-              size: 32,
+          ),
+          const SizedBox(height: 24),
+          AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, child) {
+              final v = _pulseController.value;
+              final opacity = v < 0.5 ? 0.3 + v * 1.0 : 0.3 + (1.0 - v) * 1.0;
+              return Opacity(opacity: opacity.clamp(0.3, 0.8), child: child);
+            },
+            child: Text(
+              'Connecting...',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w300,
+                letterSpacing: 1.5,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.85),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -420,7 +662,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
               // New conversation
               GestureDetector(
-                onTap: _handleNewConversation,
+                onTap: _showNewConversationDialog,
                 child: Container(
                   width: 38,
                   height: 38,
@@ -445,7 +687,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               const SizedBox(width: 8),
               // Theme toggle
               GestureDetector(
-                onTap: () => theme.toggleTheme(),
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  theme.toggleTheme();
+                },
                 child: Container(
                   width: 38,
                   height: 38,
@@ -487,27 +732,61 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         child: Column(
           children: [
             const SizedBox(height: 48),
-            // Greeting icon
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : Colors.white.withValues(alpha: 0.18),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.1)
-                      : Colors.white.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Icon(
-                Icons.waving_hand_rounded,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.6)
-                    : Colors.white,
-                size: 36,
+            // Greeting icon with pulsing glow
+            SizedBox(
+              width: 100,
+              height: 100,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, _) {
+                      final v = _pulseController.value;
+                      return Transform.scale(
+                        scale: 1.0 + v * 0.3,
+                        child: Opacity(
+                          opacity: (1 - v).clamp(0.0, 0.25),
+                          child: Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.15)
+                                    : Colors.white.withValues(alpha: 0.4),
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.06)
+                          : Colors.white.withValues(alpha: 0.18),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.1)
+                            : Colors.white.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.waving_hand_rounded,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.6)
+                          : Colors.white,
+                      size: 36,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
@@ -563,6 +842,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildChip(String text, AppThemeColors c, bool isDark) {
     return GestureDetector(
       onTap: () {
+        HapticFeedback.selectionClick();
         _textController.text = text;
         _handleSendPressed();
       },
@@ -583,15 +863,30 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     : Colors.white.withValues(alpha: 0.35),
               ),
             ),
-            child: Text(
-              text,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.8)
-                    : Colors.white,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 11,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.4)
+                      : Colors.white.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    text,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.8)
+                          : Colors.white,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -739,15 +1034,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(bottom: 4, left: 4),
+            padding: const EdgeInsets.only(bottom: 5, left: 6, right: 6),
             child: Text(
               'BUddy',
               style: GoogleFonts.inter(
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.w500,
-                letterSpacing: 1.5,
+                letterSpacing: 0.8,
                 color: isDark
-                    ? Colors.white.withValues(alpha: 0.35)
+                    ? Colors.white.withValues(alpha: 0.3)
                     : Colors.white.withValues(alpha: 0.7),
               ),
             ),
@@ -874,11 +1169,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     height: 40,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      gradient: _hasText && !isDark
+                          ? const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFFFF8A50), Color(0xFFFF6D3A)],
+                            )
+                          : null,
                       color: _hasText
-                          ? (isDark ? Colors.white : const Color(0xFFFF8A50))
+                          ? (isDark ? Colors.white : null)
                           : (isDark
                                 ? Colors.white.withValues(alpha: 0.06)
                                 : Colors.black.withValues(alpha: 0.06)),
+                      boxShadow: _hasText
+                          ? [
+                              BoxShadow(
+                                offset: const Offset(0, 2),
+                                blurRadius: 8,
+                                color: isDark
+                                    ? Colors.transparent
+                                    : const Color(
+                                        0xFFFF8A50,
+                                      ).withValues(alpha: 0.3),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Icon(
                       Icons.arrow_upward_rounded,

@@ -93,23 +93,7 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // -- Full gradient background --
-          Container(
-            decoration: BoxDecoration(
-              gradient: isDark
-                  ? null
-                  : const LinearGradient(
-                      begin: Alignment.topRight,
-                      end: Alignment.bottomLeft,
-                      colors: [
-                        Color(0xFFFF8A50),
-                        Color(0xFF64B5F6),
-                        Color(0xFF1E88E5),
-                      ],
-                    ),
-              color: isDark ? Colors.black : null,
-            ),
-          ),
+          // -- Full gradient background --\n          Container(\n            decoration: BoxDecoration(\n              gradient: isDark\n                  ? const LinearGradient(\n                      begin: Alignment.topRight,\n                      end: Alignment.bottomLeft,\n                      colors: [\n                        Colors.black,\n                        Colors.black,\n                        Colors.black,\n                      ],\n                    )\n                  : const LinearGradient(\n                      begin: Alignment.topRight,\n                      end: Alignment.bottomLeft,\n                      colors: [\n                        Color(0xFFFF8A50),\n                        Color(0xFF64B5F6),\n                        Color(0xFF1E88E5),\n                      ],\n                    ),\n            ),\n          ),
 
           // -- Centered content --
           Center(
