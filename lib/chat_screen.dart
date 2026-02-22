@@ -1098,7 +1098,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               color: isDark
                   ? c.inputBarBackground
                   : Colors.white.withValues(alpha: 0.9),
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: isDark
                     ? c.inputBarBorder
@@ -1112,81 +1112,99 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ],
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(width: 20),
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w400,
-                      color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Ask me anything...',
-                      hintStyle: GoogleFonts.inter(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: 80,
+                    maxHeight: 160,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+                    child: TextField(
+                      controller: _textController,
+                      maxLines: null,
+                      textInputAction: TextInputAction.newline,
+                      style: GoogleFonts.inter(
                         fontSize: 15,
-                        fontWeight: FontWeight.w300,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.35)
-                            : const Color(0xFF9CA3AF),
+                        fontWeight: FontWeight.w400,
+                        color: isDark ? Colors.white : const Color(0xFF1A1A2E),
                       ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    onSubmitted: (_) => _handleSendPressed(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Animated send button
-                GestureDetector(
-                  onTap: _hasText ? _handleSendPressed : null,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeOut,
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: _hasText && !isDark
-                          ? const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Color(0xFFFF8A50), Color(0xFFFF6D3A)],
-                            )
-                          : null,
-                      color: _hasText
-                          ? (isDark ? Colors.white : null)
-                          : (isDark
-                                ? Colors.white.withValues(alpha: 0.06)
-                                : Colors.black.withValues(alpha: 0.06)),
-                      boxShadow: _hasText
-                          ? [
-                              BoxShadow(
-                                offset: const Offset(0, 2),
-                                blurRadius: 8,
-                                color: isDark
-                                    ? Colors.transparent
-                                    : const Color(
-                                        0xFFFF8A50,
-                                      ).withValues(alpha: 0.3),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Icon(
-                      Icons.arrow_upward_rounded,
-                      color: _hasText
-                          ? (isDark ? Colors.black : Colors.white)
-                          : (isDark
-                                ? Colors.white.withValues(alpha: 0.2)
-                                : Colors.black.withValues(alpha: 0.2)),
-                      size: 20,
+                      decoration: InputDecoration(
+                        hintText: 'Ask me anything...',
+                        hintStyle: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w300,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.35)
+                              : const Color(0xFF9CA3AF),
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                // Send button row
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      GestureDetector(
+                        onTap: _hasText ? _handleSendPressed : null,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            gradient: _hasText && !isDark
+                                ? const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFFFF8A50),
+                                      Color(0xFFFF6D3A),
+                                    ],
+                                  )
+                                : null,
+                            color: _hasText
+                                ? (isDark ? Colors.white : null)
+                                : (isDark
+                                      ? Colors.white.withValues(alpha: 0.06)
+                                      : Colors.black.withValues(alpha: 0.06)),
+                            boxShadow: _hasText
+                                ? [
+                                    BoxShadow(
+                                      offset: const Offset(0, 2),
+                                      blurRadius: 8,
+                                      color: isDark
+                                          ? Colors.transparent
+                                          : const Color(
+                                              0xFFFF8A50,
+                                            ).withValues(alpha: 0.3),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Icon(
+                            Icons.arrow_upward_rounded,
+                            color: _hasText
+                                ? (isDark ? Colors.black : Colors.white)
+                                : (isDark
+                                      ? Colors.white.withValues(alpha: 0.2)
+                                      : Colors.black.withValues(alpha: 0.2)),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
