@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'theme_provider.dart';
 import 'chat_message.dart';
@@ -36,6 +39,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _hasText = false;
   bool _showScrollToBottom = false;
 
+  // Connectivity
+  bool _isOnline = true;
+  StreamSubscription? _connectivitySubscription;
+
   // Pulsing ring for loading state
   late AnimationController _pulseController;
 
@@ -48,7 +55,26 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     )..repeat();
     _textController.addListener(_onTextChanged);
     _scrollController.addListener(_onScroll);
+    _initConnectivity();
     _initBotpress();
+  }
+
+  Future<void> _initConnectivity() async {
+    // Check initial connectivity
+    final result = await Connectivity().checkConnectivity();
+    _updateConnectivity(result);
+
+    // Listen for changes
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
+      _updateConnectivity,
+    );
+  }
+
+  void _updateConnectivity(List<ConnectivityResult> result) {
+    final online = result.any((r) => r != ConnectivityResult.none);
+    if (online != _isOnline && mounted) {
+      setState(() => _isOnline = online);
+    }
   }
 
   void _stopPulseIfNotNeeded() {
@@ -60,6 +86,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _connectivitySubscription?.cancel();
     _messageSubscription?.cancel();
     _botService.dispose();
     _typingTimeout?.cancel();
@@ -626,16 +653,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   Positioned(
                     bottom: 0,
                     right: 0,
-                    child: Container(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
                       width: 12,
                       height: 12,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFF34D399),
+                        color: _isOnline
+                            ? const Color(0xFF34D399)
+                            : Colors.grey,
                         border: Border.all(
                           color: isDark
                               ? Colors.black
-                              : const Color.fromARGB(255, 17, 165, 96),
+                              : (_isOnline
+                                    ? const Color.fromARGB(255, 17, 165, 96)
+                                    : Colors.grey.shade700),
                           width: 2,
                         ),
                       ),
@@ -660,12 +692,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      'Online',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w400,
-                        color: const Color(0xFF34D399),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: Text(
+                        _isOnline ? 'Online' : 'Offline',
+                        key: ValueKey(_isOnline),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                          color: _isOnline
+                              ? const Color(0xFF34D399)
+                              : Colors.grey,
+                        ),
                       ),
                     ),
                   ],
@@ -906,6 +944,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildMessageList(AppThemeColors c, bool isDark) {
     return ListView.builder(
       controller: _scrollController,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       itemCount: _messages.length + (_isBotTyping ? 1 : 0),
       itemBuilder: (context, index) {
@@ -958,63 +997,239 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: isUser
-                      ? (isDark
-                            ? Colors.white
-                            : Colors.white.withValues(alpha: 0.9))
-                      : (isDark
-                            ? Colors.white.withValues(alpha: 0.06)
-                            : Colors.white.withValues(alpha: 0.2)),
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(20),
-                    topRight: const Radius.circular(20),
-                    bottomLeft: Radius.circular(isUser ? 20 : 6),
-                    bottomRight: Radius.circular(isUser ? 6 : 20),
+              child: GestureDetector(
+                onLongPress: () {
+                  HapticFeedback.mediumImpact();
+                  Clipboard.setData(ClipboardData(text: message.text));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Copied to clipboard',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 1),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
                   ),
-                  border: Border.all(
-                    color: isUser
-                        ? Colors.transparent
+                  decoration: BoxDecoration(
+                    color: message.isError
+                        ? (isDark
+                              ? Colors.red.withValues(alpha: 0.15)
+                              : Colors.red.withValues(alpha: 0.2))
+                        : isUser
+                        ? (isDark
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.9))
                         : (isDark
-                              ? Colors.white.withValues(alpha: 0.1)
-                              : Colors.white.withValues(alpha: 0.3)),
-                  ),
-                  boxShadow: isUser
-                      ? [
-                          BoxShadow(
-                            offset: const Offset(0, 2),
-                            blurRadius: 12,
-                            color: Colors.black.withValues(
-                              alpha: isDark ? 0.2 : 0.08,
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : Colors.white.withValues(alpha: 0.2)),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(20),
+                      topRight: const Radius.circular(20),
+                      bottomLeft: Radius.circular(isUser ? 20 : 6),
+                      bottomRight: Radius.circular(isUser ? 6 : 20),
+                    ),
+                    border: Border.all(
+                      color: message.isError
+                          ? Colors.red.withValues(alpha: 0.4)
+                          : isUser
+                          ? Colors.transparent
+                          : (isDark
+                                ? Colors.white.withValues(alpha: 0.1)
+                                : Colors.white.withValues(alpha: 0.3)),
+                    ),
+                    boxShadow: isUser
+                        ? [
+                            BoxShadow(
+                              offset: const Offset(0, 2),
+                              blurRadius: 12,
+                              color: Colors.black.withValues(
+                                alpha: isDark ? 0.2 : 0.08,
+                              ),
                             ),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Text(
-                  message.text,
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w400,
-                    height: 1.5,
-                    color: isUser
-                        ? (isDark ? Colors.black : const Color(0xFF1A1A2E))
-                        : (isDark
-                              ? Colors.white.withValues(alpha: 0.9)
-                              : Colors.white),
+                          ]
+                        : null,
                   ),
+                  child: message.isError
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.error_outline_rounded,
+                              size: 18,
+                              color: isDark
+                                  ? Colors.red.shade300
+                                  : Colors.red.shade200,
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                message.text,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w400,
+                                  height: 1.5,
+                                  color: isDark
+                                      ? Colors.red.shade300
+                                      : Colors.red.shade200,
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : isUser
+                      ? Text(
+                          message.text,
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w400,
+                            height: 1.5,
+                            color: isDark
+                                ? Colors.black
+                                : const Color(0xFF1A1A2E),
+                          ),
+                        )
+                      : MarkdownBody(
+                          data: message.text,
+                          selectable: true,
+                          styleSheet: MarkdownStyleSheet(
+                            p: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w400,
+                              height: 1.5,
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.9)
+                                  : Colors.white,
+                            ),
+                            strong: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              height: 1.5,
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.9)
+                                  : Colors.white,
+                            ),
+                            em: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w400,
+                              fontStyle: FontStyle.italic,
+                              height: 1.5,
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.9)
+                                  : Colors.white,
+                            ),
+                            code: GoogleFonts.firaCode(
+                              fontSize: 13,
+                              backgroundColor: isDark
+                                  ? Colors.white.withValues(alpha: 0.1)
+                                  : Colors.black.withValues(alpha: 0.1),
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.9)
+                                  : Colors.white,
+                            ),
+                            codeblockDecoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.08)
+                                  : Colors.black.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            codeblockPadding: const EdgeInsets.all(12),
+                            listBullet: GoogleFonts.inter(
+                              fontSize: 15,
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.9)
+                                  : Colors.white,
+                            ),
+                            a: GoogleFonts.inter(
+                              fontSize: 15,
+                              color: isDark
+                                  ? const Color(0xFF64B5F6)
+                                  : const Color(0xFF90CAF9),
+                              decoration: TextDecoration.underline,
+                            ),
+                            blockSpacing: 8,
+                          ),
+                          onTapLink: (text, href, title) {
+                            if (href != null) {
+                              launchUrl(Uri.parse(href));
+                            }
+                          },
+                        ),
                 ),
+              ),
+            ),
+          ),
+          // Timestamp
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 6, right: 6),
+            child: Text(
+              _formatTimestamp(message.timestamp),
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w400,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.2)
+                    : Colors.white.withValues(alpha: 0.5),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final hour = timestamp.hour;
+    final minute = timestamp.minute.toString().padLeft(2, '0');
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    final time = '$displayHour:$minute $period';
+
+    // If today, show just the time
+    if (timestamp.year == now.year &&
+        timestamp.month == now.month &&
+        timestamp.day == now.day) {
+      return time;
+    }
+
+    // If yesterday
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (timestamp.year == yesterday.year &&
+        timestamp.month == yesterday.month &&
+        timestamp.day == yesterday.day) {
+      return 'Yesterday, $time';
+    }
+
+    // Otherwise show date
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[timestamp.month - 1]} ${timestamp.day}, $time';
   }
 
   // =========================================================================

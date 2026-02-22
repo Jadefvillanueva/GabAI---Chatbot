@@ -163,7 +163,17 @@ class BotpressService {
   }
 
   Future<void> sendTextMessage(String text) async {
-    if (_conversationId == null || _userKey == null) return;
+    if (_conversationId == null || _userKey == null) {
+      _messageStreamController.add(
+        ChatMessage(
+          text: 'Something went wrong, please try again later.',
+          isUser: false,
+          id: 'err-${DateTime.now().millisecondsSinceEpoch}',
+          isError: true,
+        ),
+      );
+      return;
+    }
 
     final url = Uri.parse('$API_URL/messages');
 
@@ -180,11 +190,27 @@ class BotpressService {
         body: body,
       );
 
-      if (res.statusCode != 200) {
-        debugPrint('Send failed: ${res.body}');
+      if (res.statusCode >= 400) {
+        debugPrint('Send failed (${res.statusCode}): ${res.body}');
+        _messageStreamController.add(
+          ChatMessage(
+            text: 'Something went wrong, please try again later.',
+            isUser: false,
+            id: 'err-${DateTime.now().millisecondsSinceEpoch}',
+            isError: true,
+          ),
+        );
       }
     } catch (e) {
       debugPrint('Error sending message: $e');
+      _messageStreamController.add(
+        ChatMessage(
+          text: 'Something went wrong, please try again later.',
+          isUser: false,
+          id: 'err-${DateTime.now().millisecondsSinceEpoch}',
+          isError: true,
+        ),
+      );
     }
   }
 
