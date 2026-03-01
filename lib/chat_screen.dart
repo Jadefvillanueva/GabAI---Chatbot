@@ -130,12 +130,26 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Future<void> _initBotpress() async {
     try {
-      await _botService.initialize();
+      await _botService.initialize().timeout(
+        const Duration(minutes: 1),
+        onTimeout: () {
+          throw TimeoutException(
+            'Connection timed out. Please try again later.',
+            const Duration(minutes: 1),
+          );
+        },
+      );
       _messageSubscription = _botService.messageStream.listen(
         _onBotMessageReceived,
       );
     } catch (e) {
-      if (mounted) _showError('Init error: $e');
+      if (mounted) {
+        if (e is TimeoutException) {
+          _showError('Connection timed out. Please try again later.');
+        } else {
+          _showError('Init error: $e');
+        }
+      }
     } finally {
       if (mounted) {
         setState(() => _initializing = false);
