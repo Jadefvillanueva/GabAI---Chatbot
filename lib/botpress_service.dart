@@ -96,8 +96,30 @@ class BotpressService {
             final senderId = msg['userId'].toString();
             final isUser = senderId == _userId;
 
+            // Detect choice / dropdown payloads
+            final String msgType = (payload['type'] ?? 'text').toString();
+            List<ChoiceOption>? options;
+
+            if ((msgType == 'choice' || msgType == 'dropdown') &&
+                payload['options'] is List) {
+              options = (payload['options'] as List)
+                  .map(
+                    (o) => ChoiceOption(
+                      label: (o['label'] ?? '').toString(),
+                      value: (o['value'] ?? '').toString(),
+                    ),
+                  )
+                  .toList();
+            }
+
             _messageStreamController.add(
-              ChatMessage(text: text, isUser: isUser, id: id),
+              ChatMessage(
+                text: text,
+                isUser: isUser,
+                id: id,
+                type: options != null ? msgType : 'text',
+                options: options,
+              ),
             );
           }
         }

@@ -195,6 +195,35 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     await _botService.sendTextMessage(text);
   }
 
+  /// Handle when the user taps a choice option button.
+  void _handleChoiceSelected(ChatMessage message, ChoiceOption option) async {
+    if (message.isChoiceSelected) return;
+    HapticFeedback.lightImpact();
+
+    // Mark the choice as selected so the buttons become disabled.
+    setState(() => message.isChoiceSelected = true);
+
+    // Add the user's selection as a local user message.
+    final userMessage = ChatMessage(
+      text: option.label,
+      isUser: true,
+      id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+    );
+    setState(() {
+      _addMessageWithAnimation(userMessage);
+      _isBotTyping = true;
+    });
+    _scrollToBottom();
+
+    _typingTimeout?.cancel();
+    _typingTimeout = Timer(const Duration(seconds: 15), () {
+      if (mounted) setState(() => _isBotTyping = false);
+    });
+
+    // Send the value back to the bot as a regular text message.
+    await _botService.sendTextMessage(option.value);
+  }
+
   // =========================================================================
   // HELPERS
   // =========================================================================
@@ -578,10 +607,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     );
                   },
                 ),
-                Icon(
-                  Icons.auto_awesome_rounded,
-                  color: isDark ? Colors.white : Colors.white,
-                  size: 32,
+                Image.asset(
+                  'assets/logo.png',
+                  width: 52,
+                  height: 52,
+                  fit: BoxFit.contain,
                 ),
               ],
             ),
@@ -644,10 +674,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             : Colors.white.withValues(alpha: 0.35),
                       ),
                     ),
-                    child: const Icon(
-                      Icons.auto_awesome_rounded,
-                      color: Colors.white,
-                      size: 18,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Image.asset(
+                        'assets/logo.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                   Positioned(
@@ -1172,6 +1204,54 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
+          // Choice / dropdown option buttons
+          if (!isUser && message.options != null && message.options!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: message.options!.map((opt) {
+                  final disabled = message.isChoiceSelected;
+                  return GestureDetector(
+                    onTap: disabled
+                        ? null
+                        : () => _handleChoiceSelected(message, opt),
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 300),
+                      opacity: disabled ? 0.45 : 1.0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : Colors.white.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.15)
+                                : Colors.white.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        child: Text(
+                          opt.label,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.9)
+                                : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
           // Timestamp
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 6, right: 6),

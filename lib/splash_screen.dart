@@ -198,10 +198,13 @@ class _SplashScreenState extends State<SplashScreen>
                                       : Colors.white.withValues(alpha: 0.4),
                                 ),
                               ),
-                              child: Icon(
-                                Icons.auto_awesome_rounded,
-                                color: isDark ? Colors.white : Colors.white,
-                                size: 42,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Image.asset(
+                                  'assets/logo.png',
+                                  width: 42,
+                                  height: 42,
+                                ),
                               ),
                             ),
                           ),
