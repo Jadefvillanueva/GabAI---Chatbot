@@ -15,38 +15,45 @@ void main() async {
   runApp(BUddyApp(themeProvider: themeProvider));
 }
 
-class BUddyApp extends StatelessWidget {
+class BUddyApp extends StatefulWidget {
   final ThemeProvider themeProvider;
 
   const BUddyApp({super.key, required this.themeProvider});
 
   @override
+  State<BUddyApp> createState() => _BUddyAppState();
+}
+
+class _BUddyAppState extends State<BUddyApp> {
+  ThemeData? _cachedTheme;
+  bool? _lastIsDark;
+
+  @override
   Widget build(BuildContext context) {
     return ThemeScope(
-      themeProvider: themeProvider,
+      themeProvider: widget.themeProvider,
       child: AnimatedBuilder(
-        animation: themeProvider,
+        animation: widget.themeProvider,
         builder: (context, _) {
-          final colors = themeProvider.colors;
-          final isDark = themeProvider.isDarkMode;
+          final colors = widget.themeProvider.colors;
+          final isDark = widget.themeProvider.isDarkMode;
 
-          // Match system chrome to current theme
-          SystemChrome.setSystemUIOverlayStyle(
-            isDark
-                ? SystemUiOverlayStyle.light.copyWith(
-                    statusBarColor: Colors.transparent,
-                    systemNavigationBarColor: Colors.black,
-                  )
-                : SystemUiOverlayStyle.dark.copyWith(
-                    statusBarColor: Colors.transparent,
-                    systemNavigationBarColor: colors.background,
-                  ),
-          );
+          // Only update system chrome & rebuild ThemeData when theme changes
+          if (_lastIsDark != isDark) {
+            _lastIsDark = isDark;
+            SystemChrome.setSystemUIOverlayStyle(
+              isDark
+                  ? SystemUiOverlayStyle.light.copyWith(
+                      statusBarColor: Colors.transparent,
+                      systemNavigationBarColor: Colors.black,
+                    )
+                  : SystemUiOverlayStyle.dark.copyWith(
+                      statusBarColor: Colors.transparent,
+                      systemNavigationBarColor: colors.background,
+                    ),
+            );
 
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            title: 'BUddy',
-            theme: ThemeData(
+            _cachedTheme = ThemeData(
               brightness: colors.brightness,
               primaryColor: colors.accent,
               scaffoldBackgroundColor: Colors.black,
@@ -62,7 +69,13 @@ class BUddyApp extends StatelessWidget {
                 brightness: colors.brightness,
               ),
               splashFactory: InkSparkle.splashFactory,
-            ),
+            );
+          }
+
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            title: 'BUddy',
+            theme: _cachedTheme,
             home: const SplashScreen(),
           );
         },

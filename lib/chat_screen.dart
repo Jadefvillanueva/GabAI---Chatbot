@@ -13,6 +13,12 @@ import 'chat_message.dart';
 import 'botpress_service.dart';
 
 // ---------------------------------------------------------------------------
+// Cached expensive objects — reuse instead of recreating per frame.
+// ---------------------------------------------------------------------------
+final _kBlur10 = ImageFilter.blur(sigmaX: 10, sigmaY: 10);
+final _kBlur30 = ImageFilter.blur(sigmaX: 30, sigmaY: 30);
+
+// ---------------------------------------------------------------------------
 // Chat Screen
 // ---------------------------------------------------------------------------
 class ChatScreen extends StatefulWidget {
@@ -80,7 +86,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _stopPulseIfNotNeeded() {
     // Stop the infinite pulse animation when it's no longer visible
     if (!_initializing && _messages.isNotEmpty) {
-      if (_pulseController.isAnimating) _pulseController.stop();
+      if (_pulseController.isAnimating) {
+        _pulseController.stop();
+        _pulseController.reset();
+      }
+    }
+  }
+
+  void _startPulseIfNeeded() {
+    if (_messages.isEmpty && !_pulseController.isAnimating) {
+      _pulseController.repeat();
     }
   }
 
@@ -281,7 +296,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(28),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                filter: _kBlur30,
                 child: Container(
                   width: MediaQuery.of(context).size.width * 0.82,
                   padding: const EdgeInsets.symmetric(
@@ -450,6 +465,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _isBotTyping = false;
         _showScrollToBottom = false;
       });
+      // Restart pulse for empty state
+      _startPulseIfNeeded();
     }
   }
 
@@ -646,156 +663,158 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // =========================================================================
 
   Widget _buildGlassHeader(ThemeProvider theme, AppThemeColors c, bool isDark) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          decoration: BoxDecoration(
-            color: c.headerGlass,
-            border: Border(bottom: BorderSide(color: c.headerBorder)),
-          ),
-          child: Row(
-            children: [
-              // Logo with online indicator
-              Stack(
-                children: [
-                  Container(
+    return RepaintBoundary(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: _kBlur10,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            decoration: BoxDecoration(
+              color: c.headerGlass,
+              border: Border(bottom: BorderSide(color: c.headerBorder)),
+            ),
+            child: Row(
+              children: [
+                // Logo with online indicator
+                Stack(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : Colors.white.withValues(alpha: 0.2),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.15)
+                              : Colors.white.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Image.asset(
+                          'assets/logo.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _isOnline
+                              ? const Color(0xFF34D399)
+                              : Colors.grey,
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.black
+                                : (_isOnline
+                                      ? const Color.fromARGB(255, 17, 165, 96)
+                                      : Colors.grey.shade700),
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                // Title + status
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'BUddy',
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Text(
+                          _isOnline ? 'Online' : 'Offline',
+                          key: ValueKey(_isOnline),
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400,
+                            color: _isOnline
+                                ? const Color(0xFF34D399)
+                                : Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // New conversation
+                GestureDetector(
+                  onTap: _showNewConversationDialog,
+                  child: Container(
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: isDark
                           ? Colors.white.withValues(alpha: 0.08)
-                          : Colors.white.withValues(alpha: 0.2),
+                          : Colors.white.withValues(alpha: 0.15),
                       border: Border.all(
                         color: isDark
                             ? Colors.white.withValues(alpha: 0.15)
-                            : Colors.white.withValues(alpha: 0.35),
+                            : Colors.white.withValues(alpha: 0.3),
                       ),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Image.asset(
-                        'assets/logo.png',
-                        fit: BoxFit.contain,
-                      ),
+                    child: const Icon(
+                      Icons.edit_outlined,
+                      color: Colors.white,
+                      size: 18,
                     ),
                   ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _isOnline
-                            ? const Color(0xFF34D399)
-                            : Colors.grey,
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.black
-                              : (_isOnline
-                                    ? const Color.fromARGB(255, 17, 165, 96)
-                                    : Colors.grey.shade700),
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              // Title + status
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'BUddy',
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 2,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: Text(
-                        _isOnline ? 'Online' : 'Offline',
-                        key: ValueKey(_isOnline),
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w400,
-                          color: _isOnline
-                              ? const Color(0xFF34D399)
-                              : Colors.grey,
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
-              ),
-              // New conversation
-              GestureDetector(
-                onTap: _showNewConversationDialog,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.white.withValues(alpha: 0.15),
-                    border: Border.all(
+                const SizedBox(width: 8),
+                // Theme toggle
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    theme.toggleTheme();
+                  },
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
                       color: isDark
-                          ? Colors.white.withValues(alpha: 0.15)
-                          : Colors.white.withValues(alpha: 0.3),
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.white.withValues(alpha: 0.15),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.15)
+                            : Colors.white.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Icon(
+                      theme.isDarkMode
+                          ? Icons.light_mode_rounded
+                          : Icons.dark_mode_rounded,
+                      color: Colors.white,
+                      size: 18,
                     ),
                   ),
-                  child: const Icon(
-                    Icons.edit_outlined,
-                    color: Colors.white,
-                    size: 18,
-                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              // Theme toggle
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  theme.toggleTheme();
-                },
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.white.withValues(alpha: 0.15),
-                    border: Border.all(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.15)
-                          : Colors.white.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Icon(
-                    theme.isDarkMode
-                        ? Icons.light_mode_rounded
-                        : Icons.dark_mode_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -985,9 +1004,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         }
         final message = _messages[index];
         final anim = _messageAnimControllers[index];
-        return _AnimatedMessageBubble(
-          animation: anim,
-          child: _buildBubble(message, c, isDark),
+        return RepaintBoundary(
+          child: _AnimatedMessageBubble(
+            animation: anim,
+            child: _buildBubble(message, c, isDark),
+          ),
         );
       },
     );
@@ -1371,136 +1392,140 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // =========================================================================
 
   Widget _buildInputBar(AppThemeColors c, bool isDark) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.03)
-                : Colors.white.withValues(alpha: 0.08),
-            border: Border(
-              top: BorderSide(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : Colors.white.withValues(alpha: 0.2),
-              ),
-            ),
-          ),
+    return RepaintBoundary(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: _kBlur10,
           child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
             decoration: BoxDecoration(
               color: isDark
-                  ? c.inputBarBackground
-                  : Colors.white.withValues(alpha: 0.9),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: isDark
-                    ? c.inputBarBorder
-                    : Colors.white.withValues(alpha: 0.3),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  offset: const Offset(0, 4),
-                  blurRadius: 20,
-                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
+                  ? Colors.white.withValues(alpha: 0.03)
+                  : Colors.white.withValues(alpha: 0.08),
+              border: Border(
+                top: BorderSide(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : Colors.white.withValues(alpha: 0.2),
                 ),
-              ],
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minHeight: 80,
-                    maxHeight: 160,
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark
+                    ? c.inputBarBackground
+                    : Colors.white.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: isDark
+                      ? c.inputBarBorder
+                      : Colors.white.withValues(alpha: 0.3),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    offset: const Offset(0, 4),
+                    blurRadius: 20,
+                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
-                    child: TextField(
-                      controller: _textController,
-                      maxLines: null,
-                      textInputAction: TextInputAction.newline,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w400,
-                        color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Ask me anything...',
-                        hintStyle: GoogleFonts.inter(
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: 80,
+                      maxHeight: 160,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+                      child: TextField(
+                        controller: _textController,
+                        maxLines: null,
+                        textInputAction: TextInputAction.newline,
+                        style: GoogleFonts.inter(
                           fontSize: 15,
-                          fontWeight: FontWeight.w300,
+                          fontWeight: FontWeight.w400,
                           color: isDark
-                              ? Colors.white.withValues(alpha: 0.35)
-                              : const Color(0xFF9CA3AF),
+                              ? Colors.white
+                              : const Color(0xFF1A1A2E),
                         ),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
+                        decoration: InputDecoration(
+                          hintText: 'Ask me anything...',
+                          hintStyle: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w300,
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.35)
+                                : const Color(0xFF9CA3AF),
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                // Send button row
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      GestureDetector(
-                        onTap: _hasText ? _handleSendPressed : null,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOut,
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            gradient: _hasText && !isDark
-                                ? const LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      Color(0xFFFF8A50),
-                                      Color(0xFFFF6D3A),
-                                    ],
-                                  )
-                                : null,
-                            color: _hasText
-                                ? (isDark ? Colors.white : null)
-                                : (isDark
-                                      ? Colors.white.withValues(alpha: 0.06)
-                                      : Colors.black.withValues(alpha: 0.06)),
-                            boxShadow: _hasText
-                                ? [
-                                    BoxShadow(
-                                      offset: const Offset(0, 2),
-                                      blurRadius: 8,
-                                      color: isDark
-                                          ? Colors.transparent
-                                          : const Color(
-                                              0xFFFF8A50,
-                                            ).withValues(alpha: 0.3),
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                          child: Icon(
-                            Icons.arrow_upward_rounded,
-                            color: _hasText
-                                ? (isDark ? Colors.black : Colors.white)
-                                : (isDark
-                                      ? Colors.white.withValues(alpha: 0.2)
-                                      : Colors.black.withValues(alpha: 0.2)),
-                            size: 20,
+                  // Send button row
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        GestureDetector(
+                          onTap: _hasText ? _handleSendPressed : null,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: _hasText && !isDark
+                                  ? const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Color(0xFFFF8A50),
+                                        Color(0xFFFF6D3A),
+                                      ],
+                                    )
+                                  : null,
+                              color: _hasText
+                                  ? (isDark ? Colors.white : null)
+                                  : (isDark
+                                        ? Colors.white.withValues(alpha: 0.06)
+                                        : Colors.black.withValues(alpha: 0.06)),
+                              boxShadow: _hasText
+                                  ? [
+                                      BoxShadow(
+                                        offset: const Offset(0, 2),
+                                        blurRadius: 8,
+                                        color: isDark
+                                            ? Colors.transparent
+                                            : const Color(
+                                                0xFFFF8A50,
+                                              ).withValues(alpha: 0.3),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Icon(
+                              Icons.arrow_upward_rounded,
+                              color: _hasText
+                                  ? (isDark ? Colors.black : Colors.white)
+                                  : (isDark
+                                        ? Colors.white.withValues(alpha: 0.2)
+                                        : Colors.black.withValues(alpha: 0.2)),
+                              size: 20,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
