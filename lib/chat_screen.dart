@@ -218,7 +218,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     _textController.clear();
     _typingTimeout?.cancel();
-    _typingTimeout = Timer(const Duration(seconds: 15), () {
+    _typingTimeout = Timer(const Duration(seconds: 45), () {
       if (mounted) setState(() => _isBotTyping = false);
     });
     await _botService.sendTextMessage(text);
@@ -245,7 +245,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _scrollToBottom();
 
     _typingTimeout?.cancel();
-    _typingTimeout = Timer(const Duration(seconds: 15), () {
+    _typingTimeout = Timer(const Duration(seconds: 45), () {
       if (mounted) setState(() => _isBotTyping = false);
     });
 

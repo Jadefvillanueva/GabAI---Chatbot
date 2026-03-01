@@ -55,7 +55,7 @@ class BotpressService {
   /// Polls the server every 2 seconds for new messages
   void _startPolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
       if (_conversationId != null && _userKey != null) {
         await _fetchNewMessages();
       }
@@ -206,11 +206,16 @@ class BotpressService {
     });
 
     try {
-      final res = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json', 'x-user-key': _userKey!},
-        body: body,
-      );
+      final res = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-key': _userKey!,
+            },
+            body: body,
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (res.statusCode >= 400) {
         debugPrint('Send failed (${res.statusCode}): ${res.body}');
