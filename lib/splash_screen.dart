@@ -26,7 +26,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Logo scale-in
     _scaleController = AnimationController(
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 900),
       vsync: this,
     );
     _scaleAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
@@ -41,7 +41,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Text fade-in (delayed)
     _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 240),
       vsync: this,
     );
     _fadeAnimation = CurvedAnimation(
@@ -76,11 +76,14 @@ class _SplashScreenState extends State<SplashScreen>
           const ChatScreen(),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         return FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          ),
           child: child,
         );
       },
-      transitionDuration: const Duration(milliseconds: 600),
+      transitionDuration: const Duration(milliseconds: 380),
     );
   }
 

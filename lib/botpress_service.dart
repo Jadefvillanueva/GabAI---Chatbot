@@ -10,6 +10,9 @@ class BotpressService {
   // Read the Webhook ID from .env
   static final String WEBHOOK_ID = dotenv.env['BOTPRESS_WEBHOOK_ID'] ?? '';
   static final String API_URL = 'https://chat.botpress.cloud/$WEBHOOK_ID';
+  static const String _kUserKeyPref = 'botpress_user_key';
+  static const String _kUserIdPref = 'botpress_user_id';
+  static const String _kConversationIdPref = 'botpress_conversation_id';
 
   String? _userId;
   String? _userKey; // Required for authentication in Chat API
@@ -24,11 +27,12 @@ class BotpressService {
   // Keep track of messages we've already sent to the UI to avoid duplicates
   final Set<String> _processedMessageIds = {};
 
-  /// Initialize: Create User -> Create/Get Conversation -> Start Polling
-  Future<void> initialize() async {
+  /// Initialize: Create User -> Create/Get Conversation -> Start Polling.
+  /// Returns true only when startup completes successfully.
+  Future<bool> initialize() async {
     if (WEBHOOK_ID.isEmpty) {
       debugPrint('ERROR: BOTPRESS_WEBHOOK_ID is missing in .env');
-      return;
+      return false;
     }
 
     try {
@@ -36,14 +40,20 @@ class BotpressService {
       await _getOrCreateUser();
 
       // 2. Create or Load Conversation
-      await _createConversation();
+      await _getOrCreateConversation();
 
-      // 3. Start Polling for new messages
+      // 3. Treat existing Botpress history as already seen so the UI can
+      // remain local-first and only show new live messages from now on.
+      await _primeProcessedIdsFromHistory();
+
+      // 4. Start Polling for new messages
       _startPolling();
 
       debugPrint('Botpress Chat API Initialized. User: $_userId');
+      return true;
     } catch (e) {
       debugPrint('Initialization failed: $e');
+      return false;
     }
   }
 
@@ -129,16 +139,42 @@ class BotpressService {
     }
   }
 
+  Future<void> _primeProcessedIdsFromHistory() async {
+    final conversationId = _conversationId;
+    if (conversationId == null || _userKey == null) return;
+
+    try {
+      final url = Uri.parse('$API_URL/conversations/$conversationId/messages');
+      final res = await http.get(
+        url,
+        headers: {'Content-Type': 'application/json', 'x-user-key': _userKey!},
+      );
+
+      if (res.statusCode != 200) return;
+
+      final json = jsonDecode(res.body);
+      final List messages = json['messages'] ?? [];
+      for (final msg in messages) {
+        final id = msg['id']?.toString();
+        if (id != null && id.isNotEmpty) {
+          _processedMessageIds.add(id);
+        }
+      }
+    } catch (e) {
+      debugPrint('History priming skipped: $e');
+    }
+  }
+
   Future<void> _getOrCreateUser() async {
     // Ideally, check SharedPreferences here first to see if we already have a key
     final prefs = await SharedPreferences.getInstance();
-    final storedUserKey = prefs.getString('botpress_user_key');
-    final storedUserId = prefs.getString('botpress_user_id');
+    final storedUserKey = prefs.getString(_kUserKeyPref);
+    final storedUserId = prefs.getString(_kUserIdPref);
 
     if (storedUserKey != null && storedUserId != null) {
       _userKey = storedUserKey;
       _userId = storedUserId;
-      debugPrint("Restored existing user: $_userId");
+      debugPrint('Restored existing user: $_userId');
       return;
     }
 
@@ -159,10 +195,53 @@ class BotpressService {
           data['key']; // Use 'key', not 'user'['key'] based on some API versions
 
       // Save for next time
-      await prefs.setString('botpress_user_key', _userKey!);
-      await prefs.setString('botpress_user_id', _userId!);
+      await prefs.setString(_kUserKeyPref, _userKey!);
+      await prefs.setString(_kUserIdPref, _userId!);
     } else {
       throw 'Failed to create user: ${res.body}';
+    }
+  }
+
+  Future<void> _getOrCreateConversation() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedConversationId = prefs.getString(_kConversationIdPref);
+
+    if (storedConversationId != null) {
+      _conversationId = storedConversationId;
+
+      if (await _isConversationStillValid(storedConversationId)) {
+        debugPrint('Restored existing conversation: $_conversationId');
+        return;
+      }
+
+      await prefs.remove(_kConversationIdPref);
+      _conversationId = null;
+    }
+
+    await _createConversation();
+  }
+
+  Future<bool> _isConversationStillValid(String conversationId) async {
+    try {
+      final url = Uri.parse('$API_URL/conversations/$conversationId/messages');
+      final res = await http.get(
+        url,
+        headers: {'Content-Type': 'application/json', 'x-user-key': _userKey!},
+      );
+
+      // Explicitly invalid / inaccessible conversation IDs.
+      if (res.statusCode == 401 ||
+          res.statusCode == 403 ||
+          res.statusCode == 404) {
+        debugPrint('Stored conversation is invalid (${res.statusCode}).');
+        return false;
+      }
+
+      // For transient server/network issues, keep the stored ID.
+      return true;
+    } catch (e) {
+      debugPrint('Conversation validation skipped due to network error: $e');
+      return true;
     }
   }
 
@@ -179,6 +258,8 @@ class BotpressService {
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
       _conversationId = data['conversation']['id'];
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kConversationIdPref, _conversationId!);
     } else {
       throw 'Failed to create conversation: ${res.body}';
     }

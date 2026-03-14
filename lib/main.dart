@@ -56,7 +56,7 @@ class _BUddyAppState extends State<BUddyApp> {
             _cachedTheme = ThemeData(
               brightness: colors.brightness,
               primaryColor: colors.accent,
-              scaffoldBackgroundColor: Colors.black,
+              scaffoldBackgroundColor: colors.background,
               textTheme:
                   GoogleFonts.interTextTheme(
                     ThemeData(brightness: colors.brightness).textTheme,

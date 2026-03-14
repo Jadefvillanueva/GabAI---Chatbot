@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'theme_provider.dart';
 import 'chat_message.dart';
@@ -17,6 +19,13 @@ import 'botpress_service.dart';
 // ---------------------------------------------------------------------------
 final _kBlur10 = ImageFilter.blur(sigmaX: 10, sigmaY: 10);
 final _kBlur30 = ImageFilter.blur(sigmaX: 30, sigmaY: 30);
+
+const _kMotionFast = Duration(milliseconds: 120);
+const _kMotionStandard = Duration(milliseconds: 240);
+const _kMotionEmphasis = Duration(milliseconds: 380);
+const _kConnectedHold = Duration(milliseconds: 500);
+const _kLocalMessagesPref = 'cached_chat_messages_v1';
+const _kLocalMessagesLimit = 250;
 
 class _PolicySlide {
   final String title;
@@ -91,6 +100,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _hasText = false;
   bool _isSendButtonPressed = false;
   bool _showScrollToBottom = false;
+  bool _showConnectedState = false;
+  bool _showConnectionFailedState = false;
 
   // Connectivity
   bool _isOnline = true;
@@ -101,7 +112,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   late final PageController _policyPageController;
   int _currentPolicyPage = 0;
   bool _policiesAccepted = false;
-  bool _policyDialogShowing = false;
+  bool _historyLoaded = false;
 
   @override
   void initState() {
@@ -123,6 +134,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     });
     _initConnectivity();
     _initBotpress();
+  }
+
+  Future<void> _loadCachedMessagesOnce() async {
+    if (_historyLoaded) return;
+    _historyLoaded = true;
+    await _loadCachedMessages();
   }
 
   @override
@@ -190,7 +207,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
+          duration: _kMotionStandard,
           curve: Curves.easeOut,
         );
       }
@@ -198,8 +215,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _initBotpress() async {
+    var connected = false;
+    _messageSubscription = _botService.messageStream.listen(_onMessageReceived);
+
     try {
-      await _botService.initialize().timeout(
+      connected = await _botService.initialize().timeout(
         const Duration(minutes: 1),
         onTimeout: () {
           throw TimeoutException(
@@ -208,11 +228,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           );
         },
       );
-      _messageSubscription = _botService.messageStream.listen(
-        _onBotMessageReceived,
-      );
+      if (!connected && mounted) {
+        setState(() => _showConnectionFailedState = true);
+      }
     } catch (e) {
+      connected = false;
       if (mounted) {
+        setState(() => _showConnectionFailedState = true);
         if (e is TimeoutException) {
           _showError('Connection timed out. Please try again later.');
         } else {
@@ -220,22 +242,115 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         }
       }
     } finally {
-      if (mounted) {
-        setState(() => _initializing = false);
-        _stopPulseIfNotNeeded();
-        _maybeShowPoliciesPopup();
+      if (!mounted) return;
+
+      if (connected) {
+        setState(() {
+          _showConnectionFailedState = false;
+          _showConnectedState = true;
+        });
       }
+
+      // Keep the connecting state visible briefly for a cleaner handoff
+      // into the policy overlay.
+      await Future.delayed(_kConnectedHold);
+      if (!mounted) return;
+
+      if (_initializing) {
+        setState(() {
+          _showConnectedState = false;
+          _showConnectionFailedState = false;
+          _initializing = false;
+        });
+      }
+      _stopPulseIfNotNeeded();
     }
   }
 
-  void _onBotMessageReceived(ChatMessage message) {
-    if (message.isUser) return;
+  Future<void> _loadCachedMessages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kLocalMessagesPref);
+      final loadedMessages = <ChatMessage>[];
+
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map) {
+              final map = Map<String, dynamic>.from(item);
+              final parsed = ChatMessage.fromJson(map);
+              if (parsed.id.isNotEmpty) {
+                loadedMessages.add(parsed);
+              }
+            }
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        for (final controller in _messageAnimControllers) {
+          controller.dispose();
+        }
+        _messageAnimControllers.clear();
+        _messages
+          ..clear()
+          ..addAll(loadedMessages);
+
+        for (final message in loadedMessages) {
+          _seenMessageIds.add(message.id);
+          final controller = AnimationController(
+            vsync: this,
+            duration: _kMotionEmphasis,
+            value: 1,
+          );
+          _messageAnimControllers.add(controller);
+        }
+      });
+
+      _stopPulseIfNotNeeded();
+      _scrollToBottom();
+    } catch (e) {
+      debugPrint('Failed to load cached messages: $e');
+    }
+  }
+
+  Future<void> _persistMessages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final items = _messages
+          .skip(
+            _messages.length > _kLocalMessagesLimit
+                ? _messages.length - _kLocalMessagesLimit
+                : 0,
+          )
+          .map((m) => m.toJson())
+          .toList();
+      await prefs.setString(_kLocalMessagesPref, jsonEncode(items));
+    } catch (e) {
+      debugPrint('Failed to persist messages: $e');
+    }
+  }
+
+  void _onMessageReceived(ChatMessage message) {
     if (_seenMessageIds.contains(message.id)) return;
 
+    // Server echoes user messages we've already shown optimistically.
+    if (message.isUser && _hasMatchingLocalUserMessage(message)) {
+      _seenMessageIds.add(message.id);
+      return;
+    }
+
     if (mounted) {
-      HapticFeedback.selectionClick();
+      if (!message.isUser) {
+        HapticFeedback.selectionClick();
+      }
       setState(() {
-        _isBotTyping = false;
+        if (!message.isUser) {
+          _isBotTyping = false;
+        }
         _addMessageWithAnimation(message);
         _seenMessageIds.add(message.id);
       });
@@ -243,14 +358,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
+  bool _hasMatchingLocalUserMessage(ChatMessage incoming) {
+    final incomingText = incoming.text.trim();
+    if (incomingText.isEmpty) return false;
+
+    for (final existing in _messages.reversed.take(12)) {
+      if (!existing.isUser) continue;
+      if (!existing.id.startsWith('local-')) continue;
+      if (existing.text.trim() == incomingText) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _addMessageWithAnimation(ChatMessage message) {
     final controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: _kMotionEmphasis,
     );
     _messageAnimControllers.add(controller);
     _messages.add(message);
     controller.forward();
+    _persistMessages();
     _stopPulseIfNotNeeded();
   }
 
@@ -332,9 +462,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     await _botService.sendTextMessage(option.value);
   }
 
-  void _handlePoliciesAccepted(BuildContext dialogContext) {
+  void _handlePoliciesAccepted() {
     HapticFeedback.mediumImpact();
-    Navigator.of(dialogContext).pop(true);
+    if (!mounted || _policiesAccepted) return;
+    setState(() => _policiesAccepted = true);
+    _loadCachedMessagesOnce();
   }
 
   Widget _buildPolicyOverlay(AppThemeColors c, bool isDark) {
@@ -371,7 +503,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Learn what drives Bicol University while we finish connecting you.',
+                      'Learn what drives Bicol University by reading our vision, mission, and quality policy!',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: 13,
@@ -506,7 +638,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () => _handlePoliciesAccepted(context),
+                        onPressed: _handlePoliciesAccepted,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: c.accent,
                           shape: RoundedRectangleBorder(
@@ -537,47 +669,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // =========================================================================
   // HELPERS
   // =========================================================================
-
-  void _maybeShowPoliciesPopup() {
-    if (_policiesAccepted || _policyDialogShowing || !mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _policiesAccepted || _policyDialogShowing) return;
-      _showPoliciesDialog();
-    });
-  }
-
-  Future<void> _showPoliciesDialog() async {
-    _policyDialogShowing = true;
-    final theme = ThemeScope.of(context);
-    final c = theme.colors;
-    final isDark = theme.isDarkMode;
-    try {
-      final accepted = await showGeneralDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        barrierLabel: 'Policies',
-        barrierColor: Colors.transparent,
-        transitionDuration: const Duration(milliseconds: 280),
-        transitionBuilder: (context, animation, secondaryAnimation, child) {
-          final fade = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOut,
-            reverseCurve: Curves.easeIn,
-          );
-          return FadeTransition(opacity: fade, child: child);
-        },
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return _buildPolicyOverlay(c, isDark);
-        },
-      );
-
-      if (accepted == true && mounted) {
-        setState(() => _policiesAccepted = true);
-      }
-    } finally {
-      _policyDialogShowing = false;
-    }
-  }
 
   void _onTextChanged() {
     final hasText = _textController.text.trim().isNotEmpty;
@@ -801,6 +892,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _isBotTyping = false;
         _showScrollToBottom = false;
       });
+      _persistMessages();
       // Restart pulse for empty state
       _startPulseIfNeeded();
     }
@@ -870,48 +962,63 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
           // ---- Main UI ----
           SafeArea(
-            child: _initializing
-                ? _buildLoadingState(c, isDark)
-                : Column(
-                    children: [
-                      _buildGlassHeader(theme, c, isDark),
-                      Expanded(
-                        child: Stack(
+            child: Stack(
+              children: [
+                AbsorbPointer(
+                  absorbing: _initializing || !_policiesAccepted,
+                  child: _initializing
+                      ? _buildLoadingState(c, isDark)
+                      : Column(
                           children: [
-                            _messages.isEmpty && !_isBotTyping
-                                ? _buildEmptyState(c, isDark)
-                                : _buildMessageList(c, isDark),
-                            Positioned(
-                              bottom: 12,
-                              left: 0,
-                              right: 0,
-                              child: Center(
-                                child: IgnorePointer(
-                                  ignoring: !_showScrollToBottom,
-                                  child: AnimatedOpacity(
-                                    opacity: _showScrollToBottom ? 1.0 : 0.0,
-                                    duration: const Duration(milliseconds: 200),
-                                    child: AnimatedScale(
-                                      scale: _showScrollToBottom ? 1.0 : 0.5,
-                                      duration: const Duration(
-                                        milliseconds: 250,
-                                      ),
-                                      curve: Curves.easeOutBack,
-                                      child: _buildScrollToBottomButton(
-                                        c,
-                                        isDark,
+                            _buildGlassHeader(theme, c, isDark),
+                            Expanded(
+                              child: Stack(
+                                children: [
+                                  _messages.isEmpty && !_isBotTyping
+                                      ? _buildEmptyState(c, isDark)
+                                      : _buildMessageList(c, isDark),
+                                  Positioned(
+                                    bottom: 12,
+                                    left: 0,
+                                    right: 0,
+                                    child: Center(
+                                      child: IgnorePointer(
+                                        ignoring: !_showScrollToBottom,
+                                        child: AnimatedOpacity(
+                                          opacity: _showScrollToBottom
+                                              ? 1.0
+                                              : 0.0,
+                                          duration: const Duration(
+                                            milliseconds: 200,
+                                          ),
+                                          child: AnimatedScale(
+                                            scale: _showScrollToBottom
+                                                ? 1.0
+                                                : 0.5,
+                                            duration: const Duration(
+                                              milliseconds: 250,
+                                            ),
+                                            curve: Curves.easeOutBack,
+                                            child: _buildScrollToBottomButton(
+                                              c,
+                                              isDark,
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
+                                ],
                               ),
                             ),
+                            _buildInputBar(c, isDark),
                           ],
                         ),
-                      ),
-                      _buildInputBar(c, isDark),
-                    ],
-                  ),
+                ),
+                if (!_initializing && !_policiesAccepted)
+                  Positioned.fill(child: _buildPolicyOverlay(c, isDark)),
+              ],
+            ),
           ),
         ],
       ),
@@ -998,19 +1105,42 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           AnimatedBuilder(
             animation: _pulseController,
             builder: (context, child) {
+              if (_showConnectedState || _showConnectionFailedState) {
+                return child!;
+              }
               final v = _pulseController.value;
               final opacity = v < 0.5 ? 0.3 + v * 1.0 : 0.3 + (1.0 - v) * 1.0;
               return Opacity(opacity: opacity.clamp(0.3, 0.8), child: child);
             },
-            child: Text(
-              'Connecting...',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w300,
-                letterSpacing: 1.5,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.5)
-                    : Colors.white.withValues(alpha: 0.85),
+            child: AnimatedSwitcher(
+              duration: _kMotionStandard,
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: Text(
+                _showConnectionFailedState
+                    ? "Can't Connect"
+                    : (_showConnectedState ? 'Connected' : 'Connecting...'),
+                key: ValueKey(
+                  _showConnectionFailedState
+                      ? 'failed'
+                      : (_showConnectedState ? 'connected' : 'connecting'),
+                ),
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: _showConnectedState || _showConnectionFailedState
+                      ? FontWeight.w500
+                      : FontWeight.w300,
+                  letterSpacing: 1.5,
+                  color: _showConnectionFailedState
+                      ? const Color(0xFFFF6B6B)
+                      : (isDark
+                            ? Colors.white.withValues(
+                                alpha: _showConnectedState ? 0.9 : 0.5,
+                              )
+                            : Colors.white.withValues(
+                                alpha: _showConnectedState ? 1.0 : 0.85,
+                              )),
+                ),
               ),
             ),
           ),
@@ -1207,7 +1337,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       return Transform.scale(
                         scale: 1.0 + v * 0.3,
                         child: Opacity(
-                          opacity: (1 - v).clamp(0.0, 0.25),
+                          opacity: (1 - v).clamp(0.0, 0.3),
                           child: Container(
                             width: 80,
                             height: 80,
@@ -1601,7 +1731,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ? null
                         : () => _handleChoiceSelected(message, opt),
                     child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 300),
+                      duration: _kMotionStandard,
                       opacity: disabled ? 0.45 : 1.0,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -1700,6 +1830,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // =========================================================================
 
   Widget _buildTypingIndicator(AppThemeColors c, bool isDark) {
+    final bubbleColor = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.white.withValues(alpha: 0.1);
+    final bubbleBorder = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : Colors.white.withValues(alpha: 0.25);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
@@ -1722,20 +1859,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           Container(
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
             decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : Colors.white.withValues(alpha: 0.2),
+              color: bubbleColor,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
                 bottomLeft: Radius.circular(6),
                 bottomRight: Radius.circular(20),
               ),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.1)
-                    : Colors.white.withValues(alpha: 0.3),
-              ),
+              border: Border.all(color: bubbleBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1749,7 +1880,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 10),
                 AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
+                  duration: _kMotionStandard,
                   switchInCurve: Curves.easeOut,
                   switchOutCurve: Curves.easeIn,
                   transitionBuilder: (child, animation) {
@@ -1790,6 +1921,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // =========================================================================
 
   Widget _buildInputBar(AppThemeColors c, bool isDark) {
+    final shellColor = isDark
+        ? Colors.white.withValues(alpha: 0.04)
+        : Colors.white.withValues(alpha: 0.1);
+    final shellBorder = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : Colors.white.withValues(alpha: 0.25);
+
     return RepaintBoundary(
       child: ClipRect(
         child: BackdropFilter(
@@ -1797,16 +1935,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
             decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.03)
-                  : Colors.white.withValues(alpha: 0.08),
-              border: Border(
-                top: BorderSide(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : Colors.white.withValues(alpha: 0.2),
-                ),
-              ),
+              color: shellColor,
+              border: Border(top: BorderSide(color: shellBorder)),
             ),
             child: Container(
               decoration: BoxDecoration(
@@ -1885,11 +2015,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 }
                               : null,
                           child: AnimatedScale(
-                            duration: const Duration(milliseconds: 110),
+                            duration: _kMotionFast,
                             curve: Curves.easeOutCubic,
                             scale: _hasText && _isSendButtonPressed ? 0.9 : 1,
                             child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 250),
+                              duration: _kMotionStandard,
                               curve: Curves.easeOut,
                               width: 36,
                               height: 36,

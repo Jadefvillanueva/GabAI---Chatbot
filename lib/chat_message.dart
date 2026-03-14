@@ -4,6 +4,17 @@ class ChoiceOption {
   final String value;
 
   const ChoiceOption({required this.label, required this.value});
+
+  Map<String, dynamic> toJson() {
+    return {'label': label, 'value': value};
+  }
+
+  factory ChoiceOption.fromJson(Map<String, dynamic> json) {
+    return ChoiceOption(
+      label: (json['label'] ?? '').toString(),
+      value: (json['value'] ?? '').toString(),
+    );
+  }
 }
 
 /// A data model for a single chat message.
@@ -34,4 +45,42 @@ class ChatMessage {
     this.isChoiceSelected = false,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
+
+  Map<String, dynamic> toJson() {
+    return {
+      'text': text,
+      'isUser': isUser,
+      'id': id,
+      'timestamp': timestamp.toIso8601String(),
+      'isError': isError,
+      'type': type,
+      'options': options?.map((o) => o.toJson()).toList(),
+      'isChoiceSelected': isChoiceSelected,
+    };
+  }
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    final rawOptions = json['options'];
+    List<ChoiceOption>? parsedOptions;
+    if (rawOptions is List) {
+      parsedOptions = rawOptions
+          .whereType<Map>()
+          .map((o) => ChoiceOption.fromJson(Map<String, dynamic>.from(o)))
+          .toList();
+    }
+
+    final rawTimestamp = (json['timestamp'] ?? '').toString();
+    final parsedTimestamp = DateTime.tryParse(rawTimestamp);
+
+    return ChatMessage(
+      text: (json['text'] ?? '').toString(),
+      isUser: json['isUser'] == true,
+      id: (json['id'] ?? '').toString(),
+      isError: json['isError'] == true,
+      type: (json['type'] ?? 'text').toString(),
+      options: parsedOptions,
+      isChoiceSelected: json['isChoiceSelected'] == true,
+      timestamp: parsedTimestamp,
+    );
+  }
 }
