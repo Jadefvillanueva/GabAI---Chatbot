@@ -18,6 +18,31 @@ import 'botpress_service.dart';
 final _kBlur10 = ImageFilter.blur(sigmaX: 10, sigmaY: 10);
 final _kBlur30 = ImageFilter.blur(sigmaX: 30, sigmaY: 30);
 
+class _PolicySlide {
+  final String title;
+  final String description;
+
+  const _PolicySlide({required this.title, required this.description});
+}
+
+const _kPolicySlides = [
+  _PolicySlide(
+    title: 'Vision',
+    description:
+        'A University for Humanity characterized by productive scholarship, transformative leadership, collaborative service, and distinctive character for sustainable societies.',
+  ),
+  _PolicySlide(
+    title: 'Mission',
+    description:
+        'The Bicol University shall give professional and technical training, and provide advanced and specialized instruction in literature, philosophy, the sciences and arts, besides providing for the promotion of scientific and technological researches (RA 5521, Sec.3.0).',
+  ),
+  _PolicySlide(
+    title: 'Quality Policy',
+    description:
+        'Bicol University commits to continually strive for excellence in instruction, research, and extension by meeting the highest level of clientele satisfaction and adhering to quality standards and applicable statutory and regulatory requirements.',
+  ),
+];
+
 // ---------------------------------------------------------------------------
 // Chat Screen
 // ---------------------------------------------------------------------------
@@ -29,6 +54,10 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
+  static const AssetImage _kWatermarkAsset = AssetImage(
+    'assets/cropped_circle_logo.png',
+  );
+
   final BotpressService _botService = BotpressService();
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -43,6 +72,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _isBotTyping = false;
   Timer? _typingTimeout;
   bool _hasText = false;
+  bool _isSendButtonPressed = false;
   bool _showScrollToBottom = false;
 
   // Connectivity
@@ -51,6 +81,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   // Pulsing ring for loading state
   late AnimationController _pulseController;
+  late final PageController _policyPageController;
+  int _currentPolicyPage = 0;
+  bool _policiesAccepted = false;
+  bool _policyDialogShowing = false;
 
   @override
   void initState() {
@@ -61,8 +95,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     )..repeat();
     _textController.addListener(_onTextChanged);
     _scrollController.addListener(_onScroll);
+    _policyPageController = PageController(viewportFraction: 0.92);
     _initConnectivity();
     _initBotpress();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Decode once up front to avoid first-frame watermark hitching.
+    precacheImage(_kWatermarkAsset, context);
   }
 
   Future<void> _initConnectivity() async {
@@ -110,6 +152,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _textController.dispose();
     _scrollController.dispose();
     _pulseController.dispose();
+    _policyPageController.dispose();
     for (final c in _messageAnimControllers) {
       c.dispose();
     }
@@ -154,6 +197,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (mounted) {
         setState(() => _initializing = false);
         _stopPulseIfNotNeeded();
+        _maybeShowPoliciesPopup();
       }
     }
   }
@@ -163,6 +207,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (_seenMessageIds.contains(message.id)) return;
 
     if (mounted) {
+      HapticFeedback.selectionClick();
       setState(() {
         _isBotTyping = false;
         _addMessageWithAnimation(message);
@@ -184,6 +229,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _showError(String message) {
+    HapticFeedback.mediumImpact();
     final botMessage = ChatMessage(
       text: 'Error: $message',
       isUser: false,
@@ -224,6 +270,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     await _botService.sendTextMessage(text);
   }
 
+  void _setSendButtonPressed(bool value) {
+    if (_isSendButtonPressed == value || !mounted) return;
+    setState(() => _isSendButtonPressed = value);
+  }
+
   /// Handle when the user taps a choice option button.
   void _handleChoiceSelected(ChatMessage message, ChoiceOption option) async {
     if (message.isChoiceSelected) return;
@@ -253,9 +304,252 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     await _botService.sendTextMessage(option.value);
   }
 
+  void _handlePoliciesAccepted(BuildContext dialogContext) {
+    HapticFeedback.mediumImpact();
+    Navigator.of(dialogContext).pop(true);
+  }
+
+  Widget _buildPolicyOverlay(AppThemeColors c, bool isDark) {
+    final buttonTextColor = isDark ? Colors.black : Colors.white;
+    final maxDialogHeight = MediaQuery.sizeOf(context).height * 0.88;
+
+    return Container(
+      color: Colors.black.withOpacity(0.72),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxDialogHeight),
+          child: Material(
+            color: isDark
+                ? Colors.black.withOpacity(0.8)
+                : Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(32),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 28,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Before you chat',
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Learn what drives Bicol University while we finish connecting you.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.6)
+                            : Colors.black.withValues(alpha: 0.65),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      height: 230,
+                      child: PageView.builder(
+                        controller: _policyPageController,
+                        itemCount: _kPolicySlides.length,
+                        onPageChanged: (index) {
+                          _currentPolicyPage = index;
+                        },
+                        physics: const BouncingScrollPhysics(),
+                        itemBuilder: (context, index) {
+                          final slide = _kPolicySlides[index];
+                          final baseGradient = isDark
+                              ? const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF111111),
+                                    Color(0xFF1F1F1F),
+                                  ],
+                                )
+                              : LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [c.accent, c.accentSecondary],
+                                );
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(26),
+                                gradient: baseGradient,
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.3),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    offset: const Offset(0, 12),
+                                    blurRadius: 24,
+                                    color: Colors.black.withValues(alpha: 0.35),
+                                  ),
+                                ],
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      slide.title,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        physics: const BouncingScrollPhysics(),
+                                        child: Text(
+                                          slide.description,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w400,
+                                            color: Colors.white.withValues(
+                                              alpha: 0.9,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    AnimatedBuilder(
+                      animation: _policyPageController,
+                      builder: (context, _) {
+                        final page = _policyPageController.hasClients
+                            ? (_policyPageController.page ??
+                                  _currentPolicyPage.toDouble())
+                            : _currentPolicyPage.toDouble();
+                        final activeIndex = page.round().clamp(
+                          0,
+                          _kPolicySlides.length - 1,
+                        );
+
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(_kPolicySlides.length, (
+                            index,
+                          ) {
+                            final isActive = index == activeIndex;
+                            final indicatorColor = isDark
+                                ? Colors.white.withValues(
+                                    alpha: isActive ? 0.95 : 0.35,
+                                  )
+                                : c.primaryText.withValues(
+                                    alpha: isActive ? 0.9 : 0.3,
+                                  );
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              width: isActive ? 30 : 12,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: indicatorColor,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            );
+                          }),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 26),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => _handlePoliciesAccepted(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: c.accent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: Text(
+                          "Let's Get Started",
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: buttonTextColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // =========================================================================
   // HELPERS
   // =========================================================================
+
+  void _maybeShowPoliciesPopup() {
+    if (_policiesAccepted || _policyDialogShowing || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _policiesAccepted || _policyDialogShowing) return;
+      _showPoliciesDialog();
+    });
+  }
+
+  Future<void> _showPoliciesDialog() async {
+    _policyDialogShowing = true;
+    final theme = ThemeScope.of(context);
+    final c = theme.colors;
+    final isDark = theme.isDarkMode;
+    try {
+      final accepted = await showGeneralDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        barrierLabel: 'Policies',
+        barrierColor: Colors.transparent,
+        transitionDuration: const Duration(milliseconds: 280),
+        transitionBuilder: (context, animation, secondaryAnimation, child) {
+          final fade = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOut,
+            reverseCurve: Curves.easeIn,
+          );
+          return FadeTransition(opacity: fade, child: child);
+        },
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return _buildPolicyOverlay(c, isDark);
+        },
+      );
+
+      if (accepted == true && mounted) {
+        setState(() => _policiesAccepted = true);
+      }
+    } finally {
+      _policyDialogShowing = false;
+    }
+  }
 
   void _onTextChanged() {
     final hasText = _textController.text.trim().isNotEmpty;
@@ -276,9 +570,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 12) return 'Good morning!';
+    if (hour < 17) return 'Good afternoon!';
+    return 'Good evening!';
   }
 
   /// Shows a styled confirmation dialog before starting a new conversation.
@@ -493,6 +787,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final theme = ThemeScope.of(context);
     final c = theme.colors;
     final isDark = theme.isDarkMode;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final logoWidth = screenWidth * 0.574; // 30% smaller than previous 0.82x.
+    final logoCacheWidth = (logoWidth * MediaQuery.devicePixelRatioOf(context))
+        .round();
 
     return Scaffold(
       body: Stack(
@@ -520,6 +818,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ),
             ),
           ),
+
+          // ---- Logo watermark (shown only after chat init) ----
+          if (!_initializing)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: RepaintBoundary(
+                    child: Opacity(
+                      opacity: 0.5,
+                      child: Image.asset(
+                        'assets/cropped_circle_logo.png',
+                        width: logoWidth,
+                        fit: BoxFit.contain,
+                        cacheWidth: logoCacheWidth,
+                        filterQuality: FilterQuality.medium,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // ---- Main UI ----
           SafeArea(
@@ -941,7 +1260,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               runSpacing: 10,
               alignment: WrapAlignment.center,
               children: [
-                _buildChip('What can you help me with?', c, isDark),
+                _buildChip('Can you tell me who you are?', c, isDark),
                 _buildChip('How do I apply for financial aid?', c, isDark),
                 _buildChip('Scholarship requirements?', c, isDark),
                 _buildChip('How to join student orgs?', c, isDark),
@@ -1021,6 +1340,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         return RepaintBoundary(
           child: _AnimatedMessageBubble(
             animation: anim,
+            isUser: message.isUser,
             child: _buildBubble(message, c, isDark),
           ),
         );
@@ -1101,8 +1421,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               ? Colors.white
                               : Colors.white.withValues(alpha: 0.9))
                         : (isDark
-                              ? Colors.white.withValues(alpha: 0.06)
-                              : Colors.white.withValues(alpha: 0.2)),
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : Colors.white.withValues(alpha: 0.9)),
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(20),
                       topRight: const Radius.circular(20),
@@ -1115,8 +1435,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           : isUser
                           ? Colors.transparent
                           : (isDark
-                                ? Colors.white.withValues(alpha: 0.1)
-                                : Colors.white.withValues(alpha: 0.3)),
+                                ? Colors.white.withValues(alpha: 0.2)
+                                : Colors.white.withValues(alpha: 0.85)),
                     ),
                     boxShadow: isUser
                         ? [
@@ -1179,7 +1499,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               height: 1.5,
                               color: isDark
                                   ? Colors.white.withValues(alpha: 0.9)
-                                  : Colors.white,
+                                  : const Color(0xFF1A1A2E),
                             ),
                             strong: GoogleFonts.inter(
                               fontSize: 15,
@@ -1187,7 +1507,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               height: 1.5,
                               color: isDark
                                   ? Colors.white.withValues(alpha: 0.9)
-                                  : Colors.white,
+                                  : const Color(0xFF1A1A2E),
                             ),
                             em: GoogleFonts.inter(
                               fontSize: 15,
@@ -1196,7 +1516,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               height: 1.5,
                               color: isDark
                                   ? Colors.white.withValues(alpha: 0.9)
-                                  : Colors.white,
+                                  : const Color(0xFF1A1A2E),
                             ),
                             code: GoogleFonts.firaCode(
                               fontSize: 13,
@@ -1205,7 +1525,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                   : Colors.black.withValues(alpha: 0.1),
                               color: isDark
                                   ? Colors.white.withValues(alpha: 0.9)
-                                  : Colors.white,
+                                  : const Color(0xFF1A1A2E),
                             ),
                             codeblockDecoration: BoxDecoration(
                               color: isDark
@@ -1218,13 +1538,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                               fontSize: 15,
                               color: isDark
                                   ? Colors.white.withValues(alpha: 0.9)
-                                  : Colors.white,
+                                  : const Color(0xFF1A1A2E),
                             ),
                             a: GoogleFonts.inter(
                               fontSize: 15,
                               color: isDark
                                   ? const Color(0xFF64B5F6)
-                                  : const Color(0xFF90CAF9),
+                                  : const Color(0xFF1565C0),
                               decoration: TextDecoration.underline,
                             ),
                             blockSpacing: 8,
@@ -1263,12 +1583,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         decoration: BoxDecoration(
                           color: isDark
                               ? Colors.white.withValues(alpha: 0.08)
-                              : Colors.white.withValues(alpha: 0.22),
+                              : Colors.white.withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: isDark
                                 ? Colors.white.withValues(alpha: 0.15)
-                                : Colors.white.withValues(alpha: 0.45),
+                                : Colors.white.withValues(alpha: 0.9),
                           ),
                         ),
                         child: Text(
@@ -1278,7 +1598,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             fontWeight: FontWeight.w500,
                             color: isDark
                                 ? Colors.white.withValues(alpha: 0.9)
-                                : Colors.white,
+                                : const Color(0xFF1A1A2E),
                           ),
                         ),
                       ),
@@ -1487,51 +1807,72 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         GestureDetector(
-                          onTap: _hasText ? _handleSendPressed : null,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOut,
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              gradient: _hasText && !isDark
-                                  ? const LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        Color(0xFFFF8A50),
-                                        Color(0xFFFF6D3A),
-                                      ],
-                                    )
-                                  : null,
-                              color: _hasText
-                                  ? (isDark ? Colors.white : null)
-                                  : (isDark
-                                        ? Colors.white.withValues(alpha: 0.06)
-                                        : Colors.black.withValues(alpha: 0.06)),
-                              boxShadow: _hasText
-                                  ? [
-                                      BoxShadow(
-                                        offset: const Offset(0, 2),
-                                        blurRadius: 8,
-                                        color: isDark
-                                            ? Colors.transparent
-                                            : const Color(
-                                                0xFFFF8A50,
-                                              ).withValues(alpha: 0.3),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: Icon(
-                              Icons.arrow_upward_rounded,
-                              color: _hasText
-                                  ? (isDark ? Colors.black : Colors.white)
-                                  : (isDark
-                                        ? Colors.white.withValues(alpha: 0.2)
-                                        : Colors.black.withValues(alpha: 0.2)),
-                              size: 20,
+                          onTapDown: _hasText
+                              ? (_) => _setSendButtonPressed(true)
+                              : null,
+                          onTapUp: _hasText
+                              ? (_) => _setSendButtonPressed(false)
+                              : null,
+                          onTapCancel: () => _setSendButtonPressed(false),
+                          onTap: _hasText
+                              ? () {
+                                  _setSendButtonPressed(false);
+                                  _handleSendPressed();
+                                }
+                              : null,
+                          child: AnimatedScale(
+                            duration: const Duration(milliseconds: 110),
+                            curve: Curves.easeOutCubic,
+                            scale: _hasText && _isSendButtonPressed ? 0.9 : 1,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeOut,
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                gradient: _hasText && !isDark
+                                    ? const LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          Color(0xFFFF8A50),
+                                          Color(0xFFFF6D3A),
+                                        ],
+                                      )
+                                    : null,
+                                color: _hasText
+                                    ? (isDark ? Colors.white : null)
+                                    : (isDark
+                                          ? Colors.white.withValues(alpha: 0.06)
+                                          : Colors.black.withValues(
+                                              alpha: 0.06,
+                                            )),
+                                boxShadow: _hasText
+                                    ? [
+                                        BoxShadow(
+                                          offset: const Offset(0, 2),
+                                          blurRadius: 8,
+                                          color: isDark
+                                              ? Colors.transparent
+                                              : const Color(
+                                                  0xFFFF8A50,
+                                                ).withValues(alpha: 0.3),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: Icon(
+                                Icons.arrow_upward_rounded,
+                                color: _hasText
+                                    ? (isDark ? Colors.black : Colors.white)
+                                    : (isDark
+                                          ? Colors.white.withValues(alpha: 0.2)
+                                          : Colors.black.withValues(
+                                              alpha: 0.2,
+                                            )),
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
@@ -1590,21 +1931,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 // ---------------------------------------------------------------------------
 class _AnimatedMessageBubble extends AnimatedWidget {
   final Widget child;
+  final bool isUser;
 
   const _AnimatedMessageBubble({
     required Animation<double> animation,
+    required this.isUser,
     required this.child,
   }) : super(listenable: animation);
 
   @override
   Widget build(BuildContext context) {
     final anim = listenable as Animation<double>;
-    final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+    final fadeSlide = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+    final pop = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+    final slideX = (isUser ? 10.0 : -10.0) * (1 - fadeSlide.value);
     return Opacity(
-      opacity: curved.value,
+      opacity: fadeSlide.value,
       child: Transform.translate(
-        offset: Offset(0, 12 * (1 - curved.value)),
-        child: child,
+        offset: Offset(slideX, 12 * (1 - fadeSlide.value)),
+        child: Transform.scale(
+          scale: 0.96 + (0.04 * pop.value),
+          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+          child: child,
+        ),
       ),
     );
   }

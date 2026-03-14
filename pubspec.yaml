@@ -65,6 +65,7 @@ flutter:
 
   assets:
     - assets/logo.png
+    - assets/cropped_circle_logo.png
     - .env
 
   # To add assets to your application, add an assets section, like this:
