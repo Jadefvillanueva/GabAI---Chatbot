@@ -43,6 +43,21 @@ const _kPolicySlides = [
   ),
 ];
 
+const _kTypingStatuses = [
+  'Reviewing your question...',
+  'Searching BU resources...',
+  'Checking helpful details...',
+  'Drafting a clear answer...',
+  'Picking the accurate information...',
+  'Organizing the key points...',
+  'Preparing a student-friendly reply...',
+  'Cross-checking Student Handbook...',
+  'Making it easy to follow...',
+  'Almost ready to send...',
+  'Polishing the final response...',
+  'Getting your answer ready...',
+];
+
 // ---------------------------------------------------------------------------
 // Chat Screen
 // ---------------------------------------------------------------------------
@@ -71,6 +86,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _initializing = true;
   bool _isBotTyping = false;
   Timer? _typingTimeout;
+  Timer? _typingStatusTimer;
+  int _typingStatusIndex = 0;
   bool _hasText = false;
   bool _isSendButtonPressed = false;
   bool _showScrollToBottom = false;
@@ -96,6 +113,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _textController.addListener(_onTextChanged);
     _scrollController.addListener(_onScroll);
     _policyPageController = PageController(viewportFraction: 0.92);
+    _typingStatusTimer = Timer.periodic(const Duration(milliseconds: 2200), (
+      _,
+    ) {
+      if (!_isBotTyping || !mounted) return;
+      setState(() {
+        _typingStatusIndex = (_typingStatusIndex + 1) % _kTypingStatuses.length;
+      });
+    });
     _initConnectivity();
     _initBotpress();
   }
@@ -147,6 +172,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _messageSubscription?.cancel();
     _botService.dispose();
     _typingTimeout?.cancel();
+    _typingStatusTimer?.cancel();
     _textController.removeListener(_onTextChanged);
     _scrollController.removeListener(_onScroll);
     _textController.dispose();
@@ -257,6 +283,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (mounted) {
       setState(() {
         _addMessageWithAnimation(userMessage);
+        _typingStatusIndex = (_typingStatusIndex + 1) % _kTypingStatuses.length;
         _isBotTyping = true;
       });
     }
@@ -291,6 +318,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
     setState(() {
       _addMessageWithAnimation(userMessage);
+      _typingStatusIndex = (_typingStatusIndex + 1) % _kTypingStatuses.length;
       _isBotTyping = true;
     });
     _scrollToBottom();
@@ -1709,11 +1737,47 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     : Colors.white.withValues(alpha: 0.3),
               ),
             ),
-            child: SpinKitThreeBounce(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.6)
-                  : Colors.white,
-              size: 18,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SpinKitThreeBounce(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.6)
+                      : Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(height: 10),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.15),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: Text(
+                    _kTypingStatuses[_typingStatusIndex],
+                    key: ValueKey(_typingStatusIndex),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.2,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.55)
+                          : Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
