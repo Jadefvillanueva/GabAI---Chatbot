@@ -101,18 +101,24 @@ class BotpressService {
           if (!_processedMessageIds.contains(id)) {
             _processedMessageIds.add(id);
 
-            final payload = msg['payload'] ?? {};
-            final text = payload['text'] ?? 'Media message';
+            final payload = msg['payload'];
+            final payloadMap = payload is Map
+                ? Map<String, dynamic>.from(payload)
+                : <String, dynamic>{};
             final senderId = msg['userId'].toString();
             final isUser = senderId == _userId;
 
-            // Detect choice / dropdown payloads
-            final String msgType = (payload['type'] ?? 'text').toString();
+            // Detect choice / dropdown payloads and media payloads.
+            final String msgType = (payloadMap['type'] ?? 'text').toString();
             List<ChoiceOption>? options;
+            String text = '';
+            String? imageUrl;
+            String? mediaTitle;
 
             if ((msgType == 'choice' || msgType == 'dropdown') &&
-                payload['options'] is List) {
-              options = (payload['options'] as List)
+                payloadMap['options'] is List) {
+              text = (payloadMap['text'] ?? '').toString();
+              options = (payloadMap['options'] as List)
                   .map(
                     (o) => ChoiceOption(
                       label: (o['label'] ?? '').toString(),
@@ -120,14 +126,56 @@ class BotpressService {
                     ),
                   )
                   .toList();
+            } else if (msgType == 'image') {
+              imageUrl = _firstNonEmptyString(payloadMap, const ['imageUrl']);
+              mediaTitle = _firstNonEmptyString(payloadMap, const [
+                'title',
+                'caption',
+                'alt',
+              ]);
+              text = mediaTitle ?? 'Image';
+            } else if (msgType == 'markdown') {
+              text = (payloadMap['markdown'] ?? '').toString();
+            } else {
+              text =
+                  (payloadMap['text'] ??
+                          payloadMap['markdown'] ??
+                          payloadMap['title'] ??
+                          '')
+                      .toString();
+
+              // Fallback: handle image URLs even when payload type is missing.
+              imageUrl = _firstNonEmptyString(payloadMap, const [
+                'imageUrl',
+                'image',
+                'url',
+              ]);
+              mediaTitle ??= _firstNonEmptyString(payloadMap, const [
+                'title',
+                'caption',
+                'alt',
+              ]);
+              if (imageUrl != null && text.trim().isEmpty) {
+                text = mediaTitle ?? 'Image';
+              }
             }
+
+            if (text.trim().isEmpty && imageUrl == null) {
+              text = 'Media message';
+            }
+
+            final normalizedType = options != null
+                ? msgType
+                : (imageUrl != null ? 'image' : 'text');
 
             _messageStreamController.add(
               ChatMessage(
                 text: text,
                 isUser: isUser,
                 id: id,
-                type: options != null ? msgType : 'text',
+                type: normalizedType,
+                imageUrl: imageUrl,
+                mediaTitle: mediaTitle,
                 options: options,
               ),
             );
@@ -137,6 +185,24 @@ class BotpressService {
     } catch (e) {
       debugPrint('Polling error: $e');
     }
+  }
+
+  String? _firstNonEmptyString(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+
+      // Some channels may nest URL data in an object.
+      if (value is Map) {
+        final nested = value['url'];
+        if (nested is String && nested.trim().isNotEmpty) {
+          return nested.trim();
+        }
+      }
+    }
+    return null;
   }
 
   Future<void> _primeProcessedIdsFromHistory() async {

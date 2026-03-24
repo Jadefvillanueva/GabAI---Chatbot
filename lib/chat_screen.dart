@@ -1635,6 +1635,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             ),
                           ],
                         )
+                      : (!isUser &&
+                            message.type == 'image' &&
+                            message.imageUrl != null)
+                      ? _buildImageMessageContent(message, c, isDark)
                       : isUser
                       ? Text(
                           message.text,
@@ -1823,6 +1827,219 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       'Dec',
     ];
     return '${months[timestamp.month - 1]} ${timestamp.day}, $time';
+  }
+
+  Widget _buildImageMessageContent(
+    ChatMessage message,
+    AppThemeColors c,
+    bool isDark,
+  ) {
+    final imageUrl = message.imageUrl;
+    if (imageUrl == null || imageUrl.trim().isEmpty) {
+      return Text(
+        message.text,
+        style: GoogleFonts.inter(
+          fontSize: 15,
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.9)
+              : const Color(0xFF1A1A2E),
+        ),
+      );
+    }
+
+    final caption = message.mediaTitle ?? message.text;
+    final showCaption =
+        caption.trim().isNotEmpty && caption.trim().toLowerCase() != 'image';
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () =>
+              _showImageViewer(imageUrl, caption: showCaption ? caption : null),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: 240,
+              height: 180,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.08),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.16)
+                      : Colors.black.withValues(alpha: 0.08),
+                ),
+              ),
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.75)
+                            : c.accent,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Text(
+                        'Image unavailable',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.75)
+                              : const Color(0xFF374151),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        if (showCaption) ...[
+          const SizedBox(height: 8),
+          Text(
+            caption,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              height: 1.4,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.9)
+                  : const Color(0xFF1A1A2E),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _showImageViewer(String imageUrl, {String? caption}) async {
+    HapticFeedback.selectionClick();
+    if (!mounted) return;
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss image viewer',
+      barrierColor: Colors.black.withValues(alpha: 0.9),
+      transitionDuration: _kMotionStandard,
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Material(
+            type: MaterialType.transparency,
+            child: Stack(
+              children: [
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 24,
+                    ),
+                    child: InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return SizedBox(
+                              width: 58,
+                              height: 58,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 280,
+                              height: 180,
+                              color: Colors.white.withValues(alpha: 0.08),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'Failed to load image',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (caption != null && caption.trim().isNotEmpty)
+                  Positioned(
+                    left: 24,
+                    right: 24,
+                    bottom: 22,
+                    child: Text(
+                      caption,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withValues(alpha: 0.95),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  right: 10,
+                  top: 6,
+                  child: IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.close_rounded),
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.98, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   // =========================================================================

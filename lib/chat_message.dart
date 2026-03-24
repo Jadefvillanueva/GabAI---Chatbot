@@ -26,8 +26,14 @@ class ChatMessage {
   final DateTime timestamp;
   final bool isError; // True if this is an error message.
 
-  /// Message type – 'text', 'choice', or 'dropdown'.
+  /// Message type – 'text', 'choice', 'dropdown', or 'image'.
   final String type;
+
+  /// Image URL when [type] is 'image'.
+  final String? imageUrl;
+
+  /// Optional media title/caption provided by the payload.
+  final String? mediaTitle;
 
   /// Options available when [type] is 'choice' or 'dropdown'.
   final List<ChoiceOption>? options;
@@ -41,6 +47,8 @@ class ChatMessage {
     required this.id,
     this.isError = false,
     this.type = 'text',
+    this.imageUrl,
+    this.mediaTitle,
     this.options,
     this.isChoiceSelected = false,
     DateTime? timestamp,
@@ -54,6 +62,8 @@ class ChatMessage {
       'timestamp': timestamp.toIso8601String(),
       'isError': isError,
       'type': type,
+      'imageUrl': imageUrl,
+      'mediaTitle': mediaTitle,
       'options': options?.map((o) => o.toJson()).toList(),
       'isChoiceSelected': isChoiceSelected,
     };
@@ -78,6 +88,12 @@ class ChatMessage {
       id: (json['id'] ?? '').toString(),
       isError: json['isError'] == true,
       type: (json['type'] ?? 'text').toString(),
+      imageUrl: (json['imageUrl'] ?? '').toString().trim().isEmpty
+          ? null
+          : (json['imageUrl'] ?? '').toString().trim(),
+      mediaTitle: (json['mediaTitle'] ?? '').toString().trim().isEmpty
+          ? null
+          : (json['mediaTitle'] ?? '').toString().trim(),
       options: parsedOptions,
       isChoiceSelected: json['isChoiceSelected'] == true,
       timestamp: parsedTimestamp,
