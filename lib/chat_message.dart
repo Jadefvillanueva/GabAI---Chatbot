@@ -26,11 +26,14 @@ class ChatMessage {
   final DateTime timestamp;
   final bool isError; // True if this is an error message.
 
-  /// Message type – 'text', 'choice', 'dropdown', or 'image'.
+  /// Message type – 'text', 'choice', 'dropdown', 'image', or 'file'.
   final String type;
 
   /// Image URL when [type] is 'image'.
   final String? imageUrl;
+
+  /// File URL when [type] is 'file'.
+  final String? fileUrl;
 
   /// Optional media title/caption provided by the payload.
   final String? mediaTitle;
@@ -48,6 +51,7 @@ class ChatMessage {
     this.isError = false,
     this.type = 'text',
     this.imageUrl,
+    this.fileUrl,
     this.mediaTitle,
     this.options,
     this.isChoiceSelected = false,
@@ -63,6 +67,7 @@ class ChatMessage {
       'isError': isError,
       'type': type,
       'imageUrl': imageUrl,
+      'fileUrl': fileUrl,
       'mediaTitle': mediaTitle,
       'options': options?.map((o) => o.toJson()).toList(),
       'isChoiceSelected': isChoiceSelected,
@@ -91,6 +96,9 @@ class ChatMessage {
       imageUrl: (json['imageUrl'] ?? '').toString().trim().isEmpty
           ? null
           : (json['imageUrl'] ?? '').toString().trim(),
+      fileUrl: (json['fileUrl'] ?? '').toString().trim().isEmpty
+          ? null
+          : (json['fileUrl'] ?? '').toString().trim(),
       mediaTitle: (json['mediaTitle'] ?? '').toString().trim().isEmpty
           ? null
           : (json['mediaTitle'] ?? '').toString().trim(),

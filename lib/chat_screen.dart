@@ -1639,6 +1639,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             message.type == 'image' &&
                             message.imageUrl != null)
                       ? _buildImageMessageContent(message, c, isDark)
+                      : (!isUser &&
+                            message.type == 'file' &&
+                            message.fileUrl != null)
+                      ? _buildFileMessageContent(message, c, isDark)
                       : isUser
                       ? Text(
                           message.text,
@@ -1930,6 +1934,139 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ],
       ],
     );
+  }
+
+  Widget _buildFileMessageContent(
+    ChatMessage message,
+    AppThemeColors c,
+    bool isDark,
+  ) {
+    final fileUrl = message.fileUrl;
+    if (fileUrl == null || fileUrl.trim().isEmpty) {
+      return Text(
+        message.text,
+        style: GoogleFonts.inter(
+          fontSize: 15,
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.9)
+              : const Color(0xFF1A1A2E),
+        ),
+      );
+    }
+
+    final rawTitle = (message.mediaTitle ?? message.text).trim();
+    final title = rawTitle.isNotEmpty ? rawTitle : _inferFileName(fileUrl);
+    final isPdf = _isPdfUrl(fileUrl);
+
+    return GestureDetector(
+      onTap: () => _openFileLink(fileUrl),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.16)
+                : Colors.black.withValues(alpha: 0.08),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isPdf
+                  ? Icons.picture_as_pdf_rounded
+                  : Icons.insert_drive_file_rounded,
+              color: isPdf
+                  ? (isDark ? Colors.red.shade300 : Colors.red.shade700)
+                  : (isDark ? Colors.white.withValues(alpha: 0.9) : c.accent),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.95)
+                          : const Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isPdf ? 'PDF document' : 'File attachment',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : const Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.open_in_new_rounded,
+              size: 18,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.75)
+                  : const Color(0xFF6B7280),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFileLink(String fileUrl) async {
+    final uri = Uri.tryParse(fileUrl);
+    if (uri == null || uri.scheme.isEmpty) {
+      return;
+    }
+
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to open file',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  String _inferFileName(String fileUrl) {
+    final parsed = Uri.tryParse(fileUrl);
+    if (parsed == null || parsed.pathSegments.isEmpty) {
+      return 'Open file';
+    }
+
+    final name = parsed.pathSegments.last.trim();
+    if (name.isEmpty) return 'Open file';
+    return Uri.decodeComponent(name);
+  }
+
+  bool _isPdfUrl(String fileUrl) {
+    final parsed = Uri.tryParse(fileUrl);
+    final path = (parsed?.path ?? fileUrl).toLowerCase();
+    return path.endsWith('.pdf');
   }
 
   Future<void> _showImageViewer(String imageUrl, {String? caption}) async {

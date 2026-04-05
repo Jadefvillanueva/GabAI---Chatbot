@@ -113,7 +113,15 @@ class BotpressService {
             List<ChoiceOption>? options;
             String text = '';
             String? imageUrl;
+            String? fileUrl;
             String? mediaTitle;
+            const mediaLabelKeys = [
+              'title',
+              'caption',
+              'name',
+              'filename',
+              'alt',
+            ];
 
             if ((msgType == 'choice' || msgType == 'dropdown') &&
                 payloadMap['options'] is List) {
@@ -128,12 +136,15 @@ class BotpressService {
                   .toList();
             } else if (msgType == 'image') {
               imageUrl = _firstNonEmptyString(payloadMap, const ['imageUrl']);
-              mediaTitle = _firstNonEmptyString(payloadMap, const [
-                'title',
-                'caption',
-                'alt',
-              ]);
+              mediaTitle = _firstNonEmptyString(payloadMap, mediaLabelKeys);
               text = mediaTitle ?? 'Image';
+            } else if (msgType == 'file') {
+              fileUrl = _firstNonEmptyString(payloadMap, const [
+                'fileUrl',
+                'url',
+              ]);
+              mediaTitle = _firstNonEmptyString(payloadMap, mediaLabelKeys);
+              text = mediaTitle ?? 'File';
             } else if (msgType == 'markdown') {
               text = (payloadMap['markdown'] ?? '').toString();
             } else {
@@ -144,29 +155,46 @@ class BotpressService {
                           '')
                       .toString();
 
-              // Fallback: handle image URLs even when payload type is missing.
+              // Fallback: recover media when payload type is omitted.
               imageUrl = _firstNonEmptyString(payloadMap, const [
                 'imageUrl',
                 'image',
+              ]);
+              fileUrl = _firstNonEmptyString(payloadMap, const [
+                'fileUrl',
+                'file',
+              ]);
+
+              final genericUrl = _firstNonEmptyString(payloadMap, const [
                 'url',
               ]);
-              mediaTitle ??= _firstNonEmptyString(payloadMap, const [
-                'title',
-                'caption',
-                'alt',
-              ]);
-              if (imageUrl != null && text.trim().isEmpty) {
-                text = mediaTitle ?? 'Image';
+              if (genericUrl != null && imageUrl == null && fileUrl == null) {
+                if (_isLikelyImageUrl(genericUrl)) {
+                  imageUrl = genericUrl;
+                } else {
+                  fileUrl = genericUrl;
+                }
+              }
+
+              mediaTitle ??= _firstNonEmptyString(payloadMap, mediaLabelKeys);
+              if (text.trim().isEmpty) {
+                if (imageUrl != null) {
+                  text = mediaTitle ?? 'Image';
+                } else if (fileUrl != null) {
+                  text = mediaTitle ?? 'File';
+                }
               }
             }
 
-            if (text.trim().isEmpty && imageUrl == null) {
+            if (text.trim().isEmpty && imageUrl == null && fileUrl == null) {
               text = 'Media message';
             }
 
             final normalizedType = options != null
                 ? msgType
-                : (imageUrl != null ? 'image' : 'text');
+                : (imageUrl != null
+                      ? 'image'
+                      : (fileUrl != null ? 'file' : 'text'));
 
             _messageStreamController.add(
               ChatMessage(
@@ -175,6 +203,7 @@ class BotpressService {
                 id: id,
                 type: normalizedType,
                 imageUrl: imageUrl,
+                fileUrl: fileUrl,
                 mediaTitle: mediaTitle,
                 options: options,
               ),
@@ -203,6 +232,19 @@ class BotpressService {
       }
     }
     return null;
+  }
+
+  bool _isLikelyImageUrl(String rawUrl) {
+    final parsed = Uri.tryParse(rawUrl);
+    final path = (parsed?.path ?? rawUrl).toLowerCase();
+    return path.endsWith('.png') ||
+        path.endsWith('.jpg') ||
+        path.endsWith('.jpeg') ||
+        path.endsWith('.gif') ||
+        path.endsWith('.webp') ||
+        path.endsWith('.bmp') ||
+        path.endsWith('.svg') ||
+        path.endsWith('.avif');
   }
 
   Future<void> _primeProcessedIdsFromHistory() async {
